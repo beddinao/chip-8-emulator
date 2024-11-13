@@ -2,8 +2,8 @@ CC = cc
 SRC = $(wildcard src/*.c)
 HR = $(wildcard include/*.h)
 OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
-CFLAGS =
-NAME = emu
+CFLAGS = -Werror -Wextra -Wall
+NAME = chip8
 
 all: $(NAME)
 
