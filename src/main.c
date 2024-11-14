@@ -109,6 +109,9 @@ void	_7xkk (CHIP8* chip8_data) {};
 //	8xy0: LD Vx, Vy - store the value of register Vy in register Vx
 void	_8xy0 (CHIP8* chip8_data) {};
 
+//	8xy1: OR Vx, Vy - performs bitwise OR on the values of Vx and Vy, then stores the result in Vx
+void	_8xy1 (CHIP8* chip8_data) {};
+
 int	main(int c, char **v)
 {
 	if (c != 2) {
