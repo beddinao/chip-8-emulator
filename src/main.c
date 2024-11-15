@@ -166,8 +166,45 @@ void	_Ex9E (CHIP8* chip8_data) {};
 //	ExA1: SKNP Vx - skip next instruction if key of the value is not pressed.
 void	_ExA1 (CHIP8* chip8_data) {};
 
-//	Fx01: LD Vx, K - wait for a key pres, store the value of the key in Vx.
-void	_Fx01 (CHIP8* chip8_data) {};
+//	Fx07: LD Vx, DT - set Vx = delay timer value
+//	the value of DT is placed into Vx
+void	_Fx07 (CHIP8* chip8_data) {};
+
+//	Fx0A: LD Vx, K - wait for a key pres, store the value of the key in Vx.
+//	all execution stops until a key is pressed, then the value of that key
+//	is stored in Vx
+void	_Fx0A (CHIP8* chip8_data) {};
+
+//	Fx15: LD DT, Vx - set delay timer = Vx.
+//	DT is set equal to the value of Vx
+void	_Fx15 (CHIP8* chip8_data) {};
+
+//	Fx18: LD ST, Vx - set sound timer = Vx.
+//	ST is set equal to the value of Vx
+void	_Fx18 (CHIP8* chip8_data) {};
+
+//	Fx1E: ADD I, Vx - set I = I + Vx.
+//	the values of I and Vx are added,
+//	and the result are stored in I
+void	_Fx1E (CHIP8* chip8_data) {};
+
+//	Fx29: LD F, Vx - set I = location of sprite for digit Vx.
+//	the value of I is set to the location for the hex sprite corresponding
+//	to the value of Vx.
+void	_Fx29 (CHIP8* chip8_data) {};
+
+//	Fx33: LD B, Vx - store BCD representation of Vx in memory location I, I+1, and I+2
+//	takes the decimal value of Vx, and places the hundreds digit in memory at location in I,
+//	the tens digit at location I+1, and the ones digit at location I+2.
+void	_Fx33 (CHIP8* chip8_data) {};
+
+//	Fx55: LD [I], Vx - store registers V0 through Vx in memory starting at location I.
+//	copied the values of registers V0 through Vx into memory, starting at the address in I.
+void	_Fx55 (CHIP8* chip8_data) {};
+
+//	Fx65: Lx Vx, [I] - read registers V0 through Vx from memory starting at location I
+//	reads the values from memory starting at location I into registers V0 through Vx.
+void	_Fx65 (CHIP8* chip8_data) {};
 
 int	main(int c, char **v)
 {
