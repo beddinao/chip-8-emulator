@@ -140,6 +140,35 @@ void	_8xy7 (CHIP8* chip8_data) {};
 //	then VF is set to 1, otherwise to 0. Then Vx is multiplied by 2.
 void	_8xyE (CHIP8* chip8_data) {};
 
+//	9xy0: SNE Vx, Vy - the values of  Vx and Vy are compared,
+//	and if they are not equal, the PC in increased by 2
+void	_9xy0 (CHIP8* chip8_data) {};
+
+//	Annn: LD I, addr - the value of register I is set to nnn
+void	_Annn (CHIP8* chip8_data) {};
+
+//	Bnnn: JP V0, addr - the PC is set to nnn plus the value of V0
+void	_Bnnn (CHIP8* chip8_data) {};
+
+//	Cxkk: RND Vx, byte - generates a random number from 0 to 255,
+//	which is then ANDed with the value kk. The results are stored in Vx
+void	_Cxkk (CHIP8* chip8_data) {};
+
+//	Dxyn: DRW Vx, Vy, nibble - Display n-byte sprite starting at
+//	memory location I at (Vx, Vy), set VF = collision
+void	_Dxyn (CHIP8* chip8_data) {};
+
+//	Ex9E: SKP Vx - Skip next instruction if key with the value of Vx is pressed.
+//	Checks the keyboard, and if the key corresponding to the value of Vx
+//	is currently in the down position, PC is increased by 2.
+void	_Ex9E (CHIP8* chip8_data) {};
+
+//	ExA1: SKNP Vx - skip next instruction if key of the value is not pressed.
+void	_ExA1 (CHIP8* chip8_data) {};
+
+//	Fx01: LD Vx, K - wait for a key pres, store the value of the key in Vx.
+void	_Fx01 (CHIP8* chip8_data) {};
+
 int	main(int c, char **v)
 {
 	if (c != 2) {
