@@ -86,44 +86,68 @@ void	_00E0 (CHIP8* chip8_data) {
 
 //	00EE:RET - return from a subroutine
 void	_00EE (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("00EE\n");
+	if (chip8_data->SP) {
+		chip8_data->PC = chip8_data->stack[0];
+		for (unsigned i = 0; i <= chip8_data->SP && i < STACK_DEPTH; i++) {
+			if (i == chip8_data->SP || i == STACK_DEPTH - 1)
+				chip8_data->stack[i] = 0;
+			else	chip8_data->stack[i] = chip8_data->stack[i + 1];
+		}
+		chip8_data->SP -= 1;
+	}
 }
 
 //	1nnn:JP addr - jump to location nnn
 void	_1nnn (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("1nnn\n");
+	chip8_data->PC = chip8_data->opcode & 0x0FFF;
 }
 
 //	2nnn:CALL addr - call subroutine at nnn
 void	_2nnn (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("2nnn\n");
+	if (chip8_data->SP < STACK_DEPTH) {
+		for (unsigned i = STACK_DEPTH - 1; i; i--)
+			chip8_data->stack[i] = chip8_data->stack[i - 1];
+		chip8_data->SP += 1;
+		chip8_data->stack[0] = chip8_data->PC;
+		chip8_data->PC = chip8_data->opcode & 0x0FFF;
+	}
 }
 
 //	3xkk:SE Vx, byte - skip next instruction if Vx == kk
 void	_3xkk (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("3xkk\n");
+	uint8_t	reg = chip8_data->opcode & 0x0F00;
+	if (reg < 16 && chip8_data->registers[reg] == (chip8_data->opcode & 0x00FF))
+		chip8_data->PC += 2;
 }
 
 //	4xkk: SNE Vx, byte - skip next instruction if Vx != kk
 void	_4xkk (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("4xkk\n");
+	uint8_t	reg = chip8_data->opcode & 0x0F00;
+	if (reg < 16 && chip8_data->registers[reg] != (chip8_data->opcode & 0x00FF))
+		chip8_data->PC += 2;
 }
 
 //	5xy0: SE Vx, Vy - skip next instruction if Vx = Vy
 void	_5xy0 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("5xy0\n");
+	uint8_t	reg_x = chip8_data->opcode & 0x0F00;
+	uint8_t	reg_y = chip8_data->opcode & 0x00F0;
+	if (reg_x < 16 && reg_y < 16
+		&& chip8_data->registers[reg_x] == chip8_data->registers[reg_y])
+		chip8_data->PC += 2;
 }
 
 //	6xkk: LD Vx, byte - put kk into register Vx
 void	_6xkk (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("6xkk\n");
+	uint8_t	reg_x = chip8_data->opcode & 0x0F00;
+	if (reg_x < 16)
+		chip8_data->registers[reg_x] = chip8_data->opcode & 0x00FF;
 }
 
 //	7xkk: ADD Vx, byte - Add kk to the value of register Vx
@@ -196,8 +220,12 @@ void	_8xyE (CHIP8* chip8_data) {
 //	9xy0: SNE Vx, Vy - the values of  Vx and Vy are compared,
 //	and if they are not equal, the PC in increased by 2
 void	_9xy0 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("9xy0\n");
+	uint8_t	reg_x = chip8_data->opcode & 0x0F00;
+	uint8_t	reg_y = chip8_data->opcode & 0x00F0;
+	if (reg_x < 16 && reg_y < 16
+		&& chip8_data->registers[reg_x] != chip8_data->registers[reg_y])
+		chip8_data->PC += 2;
 }
 
 //	Annn: LD I, addr - the value of register I is set to nnn
@@ -208,8 +236,8 @@ void	_Annn (CHIP8* chip8_data) {
 
 //	Bnnn: JP V0, addr - the PC is set to nnn plus the value of V0
 void	_Bnnn (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("Bnnn\n");
+	chip8_data->PC = (chip8_data->opcode & 0x0FFF) + chip8_data->registers[0];
 }
 
 //	Cxkk: RND Vx, byte - generates a random number from 0 to 255,
@@ -349,6 +377,7 @@ void	instruction_cycle(CHIP8* chip8_data) {
 				case 0xE: _Fs_set[4](chip8_data); break;
 				case 0x9: _Fs_set[5](chip8_data); break;
 				case 0x3: _Fs_set[6](chip8_data); break;
+				default: valid_instruction = 0;
 			}
 		else {
 			switch (instruction) {
@@ -390,6 +419,7 @@ int	main(int c, char **v)
 	CHIP8	*chip8_data = malloc(sizeof(CHIP8));
 	if (!chip8_data) 
 		return 1;
+	memset(chip8_data, 0, sizeof(CHIP8));
 
 	/// / //		LOADING ROM
 	if (!load_to_memory(chip8_data, v[1])) {
