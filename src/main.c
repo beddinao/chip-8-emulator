@@ -119,7 +119,7 @@ void	_2nnn (CHIP8* chip8_data) {
 //	3xkk:SE Vx, byte - skip next instruction if Vx == kk
 void	_3xkk (CHIP8* chip8_data) {
 	printf("3xkk\n");
-	uint8_t	reg = chip8_data->opcode & 0x0F00;
+	uint8_t	reg = (chip8_data->opcode & 0x0F00) >> 8;
 	if (reg < 16 && chip8_data->registers[reg] == (chip8_data->opcode & 0x00FF))
 		chip8_data->PC += 2;
 }
@@ -127,7 +127,7 @@ void	_3xkk (CHIP8* chip8_data) {
 //	4xkk: SNE Vx, byte - skip next instruction if Vx != kk
 void	_4xkk (CHIP8* chip8_data) {
 	printf("4xkk\n");
-	uint8_t	reg = chip8_data->opcode & 0x0F00;
+	uint8_t	reg = (chip8_data->opcode & 0x0F00) >> 8;
 	if (reg < 16 && chip8_data->registers[reg] != (chip8_data->opcode & 0x00FF))
 		chip8_data->PC += 2;
 }
@@ -135,8 +135,8 @@ void	_4xkk (CHIP8* chip8_data) {
 //	5xy0: SE Vx, Vy - skip next instruction if Vx = Vy
 void	_5xy0 (CHIP8* chip8_data) {
 	printf("5xy0\n");
-	uint8_t	reg_x = chip8_data->opcode & 0x0F00;
-	uint8_t	reg_y = chip8_data->opcode & 0x00F0;
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
 	if (reg_x < 16 && reg_y < 16
 		&& chip8_data->registers[reg_x] == chip8_data->registers[reg_y])
 		chip8_data->PC += 2;
@@ -145,55 +145,79 @@ void	_5xy0 (CHIP8* chip8_data) {
 //	6xkk: LD Vx, byte - put kk into register Vx
 void	_6xkk (CHIP8* chip8_data) {
 	printf("6xkk\n");
-	uint8_t	reg_x = chip8_data->opcode & 0x0F00;
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	if (reg_x < 16)
 		chip8_data->registers[reg_x] = chip8_data->opcode & 0x00FF;
 }
 
 //	7xkk: ADD Vx, byte - Add kk to the value of register Vx
 void	_7xkk (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("7xkk\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x < 16)
+		chip8_data->registers[reg_x] += chip8_data->opcode & 0x00FF;
 }
 
 //	8xy0: LD Vx, Vy - store the value of register Vy in register Vx
 void	_8xy0 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("8xy0\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_y < 16 && reg_x < 16)
+		chip8_data->registers[reg_x] = chip8_data->registers[reg_y];
 }
 
 //	8xy1: OR Vx, Vy - performs bitwise OR on the values of Vx and Vy,
 //	then stores the result in Vx
 void	_8xy1 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("8xy1\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x < 16 && reg_y < 16)
+		chip8_data->registers[reg_x] |= chip8_data->registers[reg_y];
 }
 
 //	8xy2: AND Vx, Vy - performs bitwise AND
 void	_8xy2 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("8xy2\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x < 16 && reg_y < 16)
+		chip8_data->registers[reg_x] &= chip8_data->registers[reg_y];
 }
 
 //	8xy3: XOR Vx, Vy - performs bitwise XOR
 void	_8xy3 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("8xy3\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x < 16 && reg_y < 16)
+		chip8_data->registers[reg_x] ^= chip8_data->registers[reg_y];
 }
 
 //	8xy4: ADD Vx, Vy - The values of Vx and Vy are added together.
 //	If the result is greater than 8 bits (i.e., > 255,) VF is set to 1,
 //	otherwise 0. Only the lowest 8 bits of the result are kept, and stored in Vx
 void	_8xy4 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("8xy4\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x < 16 && reg_y < 16) {
+		uint16_t	sum = chip8_data->registers[reg_x] + chip8_data->registers[reg_y];
+		chip8_data->registers[15] = sum > 0xFF ? 1 : 0;
+		chip8_data->registers[reg_x] = sum & 0xFF;
+	}
 }
 
 //	8xy5: SUB Vx, Vy - If Vx > Vy, then VF is set to 1, otherwise 0.
 //	Then Vy is subtracted from Vx, and the results stored in Vx.
 void	_8xy5 (CHIP8* chip8_data) {
-	(void)chip8_data;
 	printf("8xy5\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x < 16 && reg_y < 16) {
+
+	}
 }
 
 //	8xy6: SHR Vx {, Vy} - If the least-significant bit of Vx is 1,
@@ -221,8 +245,8 @@ void	_8xyE (CHIP8* chip8_data) {
 //	and if they are not equal, the PC in increased by 2
 void	_9xy0 (CHIP8* chip8_data) {
 	printf("9xy0\n");
-	uint8_t	reg_x = chip8_data->opcode & 0x0F00;
-	uint8_t	reg_y = chip8_data->opcode & 0x00F0;
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
 	if (reg_x < 16 && reg_y < 16
 		&& chip8_data->registers[reg_x] != chip8_data->registers[reg_y])
 		chip8_data->PC += 2;
@@ -404,7 +428,7 @@ void	instruction_cycle(CHIP8* chip8_data) {
 		if (!valid_instruction
 			|| chip8_data->PC >= *(chip8_data->RAM + MEMORY_START + chip8_data->memory_occupied)
 			|| chip8_data->PC < *(chip8_data->RAM + MEMORY_START))
-			return;
+			break;
 	}
 }
 
