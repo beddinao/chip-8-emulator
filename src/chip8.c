@@ -1,207 +1,4 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <time.h>
-#include "MLX42.h"
-#include <unistd.h>
-
-#define	MEMORY_SIZE	0x1000 // 4096
-#define	MEMORY_START	0x200  // 512
-#define	MAX_PROGRAM_SIZE	0xE00  // 3584
-#define	FONTS_START	0x50   // 80
-#define	FONTS_SIZE	0x50   // 80
-#define	STACK_DEPTH	16
-#define	DISPLAY_HEIGHT	32
-#define	DISPLAY_WIDTH	64
-#define	DEF_HEIGHT	0x300  // 800
-#define	DEF_WIDTH		0x640  // 1600
-#define	MIN_HEIGHT	0x190  // 400
-#define	MIN_WIDTH		0x3E8  // 1000
-#define	CYCLES_PER_TIMER	0x1
-#define	KEY_PRESS_CYCLES	0x50
-
-typedef	struct {
-	mlx_t		*mlx_ptr;
-	mlx_image_t	*mlx_img;
-	unsigned		width;
-	unsigned		height;
-}	WIN;
-
-typedef	struct chip8 {
-	uint8_t		RAM[MEMORY_SIZE];	// 0x200 - 512
-	uint16_t		stack[STACK_DEPTH];
-	uint8_t		registers[16];	// V0 - VF
-	uint16_t		IR;		// index register
-	uint16_t		PC;		// program counter
-	uint8_t		SP;		// stack pointer
-	uint8_t		DT;		// delay timer
-	uint8_t		ST;		// sound timer
-	uint32_t		CT;		// cycles timer
-	uint32_t		display[DISPLAY_HEIGHT*DISPLAY_WIDTH];
-	///////////////
-	void		(*_0_7_set[7])(struct chip8*);
-	void		(*_8s_set[9])(struct chip8*);
-	void		(*_9_D_set[5])(struct chip8*);
-	void		(*_Es_set[2])(struct chip8*);
-	void		(*_Fs_set[9])(struct chip8*);
-	///////////////
-	uint8_t		keys[16];
-	uint8_t		key_register;
-	uint8_t		halt;
-	///////////////
-	WIN		*window;
-	uint16_t		opcode;
-	uint16_t		memory_occupied;
-}	CHIP8;
-
-int	load_to_memory(CHIP8* chip8_data, char *filename) {
-	unsigned char buffer[MAX_PROGRAM_SIZE];
-	unsigned chars_read;
-	FILE *file = fopen(filename, "rb");
-	if (!file) 
-		return 0;
-
-	memset(buffer, 0, sizeof(buffer));
-	while ((chars_read = fread(buffer, 1, sizeof(buffer), file)) != 0) {
-		if (chars_read + chip8_data->memory_occupied > MAX_PROGRAM_SIZE) {
-			fclose(file);
-			return 0;
-		}
-		memcpy(chip8_data->RAM + (MEMORY_START + chip8_data->memory_occupied), buffer, chars_read);
-		chip8_data->memory_occupied += chars_read;
-		memset(buffer, 0, sizeof(buffer));
-	}
-	fclose(file);
-
-	if (!chip8_data->memory_occupied) 
-		return 0;
-
-	return 1;
-}
-
-void	load_fonts(CHIP8 *chip8_data) {
-	uint8_t fonts[FONTS_SIZE] = {
-		0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-		0x20, 0x60, 0x20, 0x20, 0x70, // 1
-		0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-		0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-		0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-		0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-		0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-		0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-		0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-		0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-		0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-		0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-		0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-		0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-		0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-		0xF0, 0x80, 0xF0, 0x80, 0x80, // F
-	};
-	memcpy(chip8_data->RAM + FONTS_START, fonts, sizeof(fonts));
-}
-
-// //// /		DRAWING UTILS
-
-void	draw_background(WIN *window, unsigned color) {
-	for (unsigned y = 0; y < window->height; y++)
-		for (unsigned x = 0; x < window->width; x++)
-			mlx_put_pixel(window->mlx_img, x, y, color);
-}
-
-unsigned	__calc_new_range(unsigned old_value,
-		unsigned old_min, unsigned old_max,
-		unsigned new_min, unsigned new_max) {
-	if (old_value == old_min)
-		return(new_min);
-	return (((old_value - old_min) * (new_max - new_min)) / (old_max - old_min)) + new_min;
-}
-
-void	render_display(CHIP8* chip8_data) {
-	unsigned scale_x = chip8_data->window->width / DISPLAY_WIDTH;
-	unsigned scale_y = chip8_data->window->height / DISPLAY_HEIGHT;
-	uint32_t color;
-	for (unsigned y = 0; y < DISPLAY_HEIGHT; y++)
-		for (unsigned x = 0; x < DISPLAY_WIDTH; x++) {
-			color = chip8_data->display[y * DISPLAY_WIDTH + x] ? 0xFFFFFF : 0x000000;
-			for (unsigned sy = 0; sy < scale_y; sy++)
-				for (unsigned sx = 0; sx < scale_x; sx++)
-					mlx_put_pixel(chip8_data->window->mlx_img, x*scale_x+sx, y*scale_y+sy, color<<8|0xFF);
-		}
-}
-
-
-/// / ////	HOOKS
-
-void	close_hook(void *p) {
-	CHIP8 *chip8_data = (CHIP8*)p;
-	mlx_terminate(chip8_data->window->mlx_ptr);
-	free(chip8_data->window);
-	free(chip8_data);
-	exit(0);
-}
-
-void	key_hook(mlx_key_data_t keydata, void *p) {
-	if (keydata.action != MLX_PRESS)	return;
-
-	CHIP8* chip8_data = (CHIP8*)p;
-	if (keydata.key == MLX_KEY_ESCAPE)
-		close_hook(p);
-	else if (keydata.key >= '0' && keydata.key <= '9') 
-		chip8_data->keys[keydata.key - '0'] = KEY_PRESS_CYCLES;
-	else if (keydata.key >= MLX_KEY_KP_0 && keydata.key <= MLX_KEY_KP_9) {
-		uint8_t i;
-		switch (keydata.key) {
-			case MLX_KEY_KP_1: i = 7; break;
-			case MLX_KEY_KP_2: i = 8; break;
-			case MLX_KEY_KP_3: i = 9; break;
-			case MLX_KEY_KP_7: i = 1; break;
-			case MLX_KEY_KP_8: i = 2; break;
-			case MLX_KEY_KP_9: i = 3; break;
-			default: i = keydata.key - MLX_KEY_KP_0;
-		}
-		chip8_data->keys[ i ] = KEY_PRESS_CYCLES;
-	}
-	else if (keydata.key >= 'A' && keydata.key <= 'F') 
-		chip8_data->keys[(keydata.key - 'A') + 10] = KEY_PRESS_CYCLES;
-	else if (keydata.key >= MLX_KEY_KP_DECIMAL && keydata.key <= MLX_KEY_KP_EQUAL) {
-		uint8_t i;
-		switch (keydata.key) {
-			case MLX_KEY_KP_DECIMAL: i = 0xA; break;
-			case MLX_KEY_KP_ENTER: i = 0xB; break;
-			case MLX_KEY_KP_ADD: i = 0xC; break;
-			case MLX_KEY_KP_SUBTRACT: i = 0xD; break;
-			case MLX_KEY_KP_MULTIPLY: i = 0xE; break;
-			case MLX_KEY_KP_DIVIDE: i = 0xF; break;
-			default: i = 0xF;
-		}
-		chip8_data->keys[ i ] = KEY_PRESS_CYCLES;
-	}
-}
-
-void	resize_hook(int width, int height, void *p) {
-	CHIP8 *chip8_data = (CHIP8*)p;
-	unsigned	valid = 0;
-
-	if (height > MIN_HEIGHT) {
-		chip8_data->window->height = height;
-		valid = 1;
-	}
-	if (width > MIN_WIDTH) {
-		chip8_data->window->width = width;
-		valid = 1;
-	}
-
-	if (valid) {
-		if (!mlx_resize_image(chip8_data->window->mlx_img,
-				chip8_data->window->width,
-				chip8_data->window->height))
-			close_hook(p);
-		render_display(chip8_data);
-	}
-}
+#include "chip8.h"
 
 //// // /		INSTRUCTIONS
 
@@ -603,7 +400,6 @@ void	load_instructions(CHIP8* chip8_data) {
 	chip8_data->_0_7_set[4] = _5xy0;
 	chip8_data->_0_7_set[5] = _6xkk;
 	chip8_data->_0_7_set[6] = _7xkk;
-
 	chip8_data->_8s_set[0] = _8xy0;
 	chip8_data->_8s_set[1] = _8xy1;
 	chip8_data->_8s_set[2] = _8xy2;
@@ -613,16 +409,13 @@ void	load_instructions(CHIP8* chip8_data) {
 	chip8_data->_8s_set[6] = _8xy6;
 	chip8_data->_8s_set[7] = _8xy7;
 	chip8_data->_8s_set[8] = _8xyE;
-
 	chip8_data->_9_D_set[0] = _9xy0;
 	chip8_data->_9_D_set[1] = _Annn;
 	chip8_data->_9_D_set[2] = _Bnnn;
 	chip8_data->_9_D_set[3] = _Cxkk;
 	chip8_data->_9_D_set[4] = _Dxyn;
-
 	chip8_data->_Es_set[0] = _Ex9E;
 	chip8_data->_Es_set[1] = _ExA1;
-
 	chip8_data->_Fs_set[0] = _Fx07;
 	chip8_data->_Fs_set[1] = _Fx0A;
 	chip8_data->_Fs_set[2] = _Fx15;
@@ -634,24 +427,51 @@ void	load_instructions(CHIP8* chip8_data) {
 	chip8_data->_Fs_set[8] = _Fx65;
 }
 
-int	init_window(CHIP8 *chip8_data, char *ROM) {
-	WIN *window = chip8_data->window;
-	window->height = DEF_HEIGHT;
-	window->width = DEF_WIDTH;
-	window->mlx_ptr = mlx_init(window->width, window->height, ROM, true);
-	if (!window->mlx_ptr)
+int	load_to_memory(CHIP8* chip8_data, char *filename) {
+	unsigned char buffer[MAX_PROGRAM_SIZE];
+	unsigned chars_read;
+	FILE *file = fopen(filename, "rb");
+	if (!file) 
 		return 0;
-	window->mlx_img = mlx_new_image(window->mlx_ptr, window->width, window->height);
-	if (!window->mlx_img) {
-		free(window->mlx_ptr);
-		return 0;
+
+	memset(buffer, 0, sizeof(buffer));
+	while ((chars_read = fread(buffer, 1, sizeof(buffer), file)) != 0) {
+		if (chars_read + chip8_data->memory_occupied > MAX_PROGRAM_SIZE) {
+			fclose(file);
+			return 0;
+		}
+		memcpy(chip8_data->RAM + (MEMORY_START + chip8_data->memory_occupied), buffer, chars_read);
+		chip8_data->memory_occupied += chars_read;
+		memset(buffer, 0, sizeof(buffer));
 	}
-	draw_background(window, 0x000000FF);
-	mlx_image_to_window(window->mlx_ptr, window->mlx_img, 0, 0);
-	mlx_key_hook(window->mlx_ptr, key_hook, chip8_data);
-	mlx_close_hook(window->mlx_ptr, close_hook, chip8_data);
-	mlx_resize_hook(window->mlx_ptr, resize_hook, chip8_data);
+	fclose(file);
+
+	if (!chip8_data->memory_occupied) 
+		return 0;
+
 	return 1;
+}
+
+void	load_fonts(CHIP8 *chip8_data) {
+	uint8_t fonts[FONTS_SIZE] = {
+		0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+		0x20, 0x60, 0x20, 0x20, 0x70, // 1
+		0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+		0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+		0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+		0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+		0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+		0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+		0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+		0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+		0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+		0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+		0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+		0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+		0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+		0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+	};
+	memcpy(chip8_data->RAM + FONTS_START, fonts, sizeof(fonts));
 }
 
 int	main(int c, char **v)
