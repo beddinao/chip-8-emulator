@@ -2,11 +2,11 @@ CC = cc
 SRC = $(wildcard src/*.c)
 HR = $(wildcard include/*.h)
 OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
-CFLAGS = -I include -I ./MLX42/include/MLX42 -Werror -Wextra -Wall
+CFLAGS = -Iinclude -I./MLX42/include/MLX42 -Werror -Wextra -Wall
 #CFLAGS += -fsanitize=address
 LDFLAGS = ./MLX42/build/libmlx42.a
-NAME = chip8
 UNAME = $(shell uname)
+NAME = chip8
 
 ifeq ($(UNAME), Linux)
 	LDFLAGS += -lglfw -ldl -pthread -lm
@@ -22,11 +22,11 @@ mlx:
 	@cmake --build ./MLX42/build -j16
 
 $(NAME): $(OBJ)
-	$(CC) -o $(NAME) $(OBJ)
+	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS)
 
 build/%.o: src/%.c $(HR)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+	$(CC) -c $< -o $@ $(CFLAGS)
 
 clean:
 	rm -rf build
