@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <time.h>
 #include "MLX42.h"
+#include <unistd.h>
 
 #define	MEMORY_SIZE	0x1000 // 4096
 #define	MEMORY_START	0x200  // 512
@@ -14,8 +15,21 @@
 #define	STACK_DEPTH	16
 #define	DISPLAY_HEIGHT	32
 #define	DISPLAY_WIDTH	64
+#define	DEF_HEIGHT	0x300  // 800
+#define	DEF_WIDTH		0x640  // 1600
+#define	MIN_HEIGHT	0x190  // 400
+#define	MIN_WIDTH		0x3E8  // 1000
+#define	CYCLES_PER_TIMER	0x1
+#define	KEY_PRESS_CYCLES	0x50
 
 typedef	struct {
+	mlx_t		*mlx_ptr;
+	mlx_image_t	*mlx_img;
+	unsigned		width;
+	unsigned		height;
+}	WIN;
+
+typedef	struct chip8 {
 	uint8_t		RAM[MEMORY_SIZE];	// 0x200 - 512
 	uint16_t		stack[STACK_DEPTH];
 	uint8_t		registers[16];	// V0 - VF
@@ -24,8 +38,20 @@ typedef	struct {
 	uint8_t		SP;		// stack pointer
 	uint8_t		DT;		// delay timer
 	uint8_t		ST;		// sound timer
+	uint32_t		CT;		// cycles timer
 	uint32_t		display[DISPLAY_HEIGHT*DISPLAY_WIDTH];
 	///////////////
+	void		(*_0_7_set[7])(struct chip8*);
+	void		(*_8s_set[9])(struct chip8*);
+	void		(*_9_D_set[5])(struct chip8*);
+	void		(*_Es_set[2])(struct chip8*);
+	void		(*_Fs_set[9])(struct chip8*);
+	///////////////
+	uint8_t		keys[16];
+	uint8_t		key_register;
+	uint8_t		halt;
+	///////////////
+	WIN		*window;
 	uint16_t		opcode;
 	uint16_t		memory_occupied;
 }	CHIP8;
@@ -77,20 +103,120 @@ void	load_fonts(CHIP8 *chip8_data) {
 	memcpy(chip8_data->RAM + FONTS_START, fonts, sizeof(fonts));
 }
 
-//// // /		INSTRUCTIONS
+// //// /		DRAWING UTILS
 
-//	00E0:CLS - clear the display
-void	_00E0 (CHIP8* chip8_data) {
-	memset(chip8_data->display, 0, sizeof(chip8_data->display));
+void	draw_background(WIN *window, unsigned color) {
+	for (unsigned y = 0; y < window->height; y++)
+		for (unsigned x = 0; x < window->width; x++)
+			mlx_put_pixel(window->mlx_img, x, y, color);
 }
 
-//	00EE:RET - return from a subroutine
+unsigned	__calc_new_range(unsigned old_value,
+		unsigned old_min, unsigned old_max,
+		unsigned new_min, unsigned new_max) {
+	if (old_value == old_min)
+		return(new_min);
+	return (((old_value - old_min) * (new_max - new_min)) / (old_max - old_min)) + new_min;
+}
+
+void	render_display(CHIP8* chip8_data) {
+	unsigned scale_x = chip8_data->window->width / DISPLAY_WIDTH;
+	unsigned scale_y = chip8_data->window->height / DISPLAY_HEIGHT;
+	uint32_t color;
+	for (unsigned y = 0; y < DISPLAY_HEIGHT; y++)
+		for (unsigned x = 0; x < DISPLAY_WIDTH; x++) {
+			color = chip8_data->display[y * DISPLAY_WIDTH + x] ? 0xFFFFFF : 0x000000;
+			for (unsigned sy = 0; sy < scale_y; sy++)
+				for (unsigned sx = 0; sx < scale_x; sx++)
+					mlx_put_pixel(chip8_data->window->mlx_img, x*scale_x+sx, y*scale_y+sy, color<<8|0xFF);
+		}
+}
+
+
+/// / ////	HOOKS
+
+void	close_hook(void *p) {
+	CHIP8 *chip8_data = (CHIP8*)p;
+	mlx_terminate(chip8_data->window->mlx_ptr);
+	free(chip8_data->window);
+	free(chip8_data);
+	exit(0);
+}
+
+void	key_hook(mlx_key_data_t keydata, void *p) {
+	if (keydata.action != MLX_PRESS)	return;
+
+	CHIP8* chip8_data = (CHIP8*)p;
+	if (keydata.key == MLX_KEY_ESCAPE)
+		close_hook(p);
+	else if (keydata.key >= '0' && keydata.key <= '9') 
+		chip8_data->keys[keydata.key - '0'] = KEY_PRESS_CYCLES;
+	else if (keydata.key >= MLX_KEY_KP_0 && keydata.key <= MLX_KEY_KP_9) {
+		uint8_t i;
+		switch (keydata.key) {
+			case MLX_KEY_KP_1: i = 7; break;
+			case MLX_KEY_KP_2: i = 8; break;
+			case MLX_KEY_KP_3: i = 9; break;
+			case MLX_KEY_KP_7: i = 1; break;
+			case MLX_KEY_KP_8: i = 2; break;
+			case MLX_KEY_KP_9: i = 3; break;
+			default: i = keydata.key - MLX_KEY_KP_0;
+		}
+		chip8_data->keys[ i ] = KEY_PRESS_CYCLES;
+	}
+	else if (keydata.key >= 'A' && keydata.key <= 'F') 
+		chip8_data->keys[(keydata.key - 'A') + 10] = KEY_PRESS_CYCLES;
+	else if (keydata.key >= MLX_KEY_KP_DECIMAL && keydata.key <= MLX_KEY_KP_EQUAL) {
+		uint8_t i;
+		switch (keydata.key) {
+			case MLX_KEY_KP_DECIMAL: i = 0xA; break;
+			case MLX_KEY_KP_ENTER: i = 0xB; break;
+			case MLX_KEY_KP_ADD: i = 0xC; break;
+			case MLX_KEY_KP_SUBTRACT: i = 0xD; break;
+			case MLX_KEY_KP_MULTIPLY: i = 0xE; break;
+			case MLX_KEY_KP_DIVIDE: i = 0xF; break;
+			default: i = 0xF;
+		}
+		chip8_data->keys[ i ] = KEY_PRESS_CYCLES;
+	}
+}
+
+void	resize_hook(int width, int height, void *p) {
+	CHIP8 *chip8_data = (CHIP8*)p;
+	unsigned	valid = 0;
+
+	if (height > MIN_HEIGHT) {
+		chip8_data->window->height = height;
+		valid = 1;
+	}
+	if (width > MIN_WIDTH) {
+		chip8_data->window->width = width;
+		valid = 1;
+	}
+
+	if (valid) {
+		if (!mlx_resize_image(chip8_data->window->mlx_img,
+				chip8_data->window->width,
+				chip8_data->window->height))
+			close_hook(p);
+		render_display(chip8_data);
+	}
+}
+
+//// // /		INSTRUCTIONS
+
+//	00E0:CLS
+void	_00E0 (CHIP8* chip8_data) {
+	memset(chip8_data->display, 0, sizeof(chip8_data->display));
+	draw_background(chip8_data->window, 0x000000FF);
+}
+
+//	00EE:RET
 void	_00EE (CHIP8* chip8_data) {
-	printf("00EE\n");
 	if (chip8_data->SP) {
 		chip8_data->PC = chip8_data->stack[0];
 		for (unsigned i = 0; i <= chip8_data->SP && i < STACK_DEPTH; i++) {
-			if (i == chip8_data->SP || i == STACK_DEPTH - 1)
+			if (i == chip8_data->SP||i == STACK_DEPTH - 1)
 				chip8_data->stack[i] = 0;
 			else	chip8_data->stack[i] = chip8_data->stack[i + 1];
 		}
@@ -98,15 +224,13 @@ void	_00EE (CHIP8* chip8_data) {
 	}
 }
 
-//	1nnn:JP addr - jump to location nnn
+//	1NNN:jump addr
 void	_1nnn (CHIP8* chip8_data) {
-	printf("1nnn\n");
 	chip8_data->PC = chip8_data->opcode & 0x0FFF;
 }
 
-//	2nnn:CALL addr - call subroutine at nnn
+//	2NNN:call addr
 void	_2nnn (CHIP8* chip8_data) {
-	printf("2nnn\n");
 	if (chip8_data->SP < STACK_DEPTH) {
 		for (unsigned i = STACK_DEPTH - 1; i; i--)
 			chip8_data->stack[i] = chip8_data->stack[i - 1];
@@ -116,247 +240,277 @@ void	_2nnn (CHIP8* chip8_data) {
 	}
 }
 
-//	3xkk:SE Vx, byte - skip next instruction if Vx == kk
+//	3XKK:SE Vx, byte
 void	_3xkk (CHIP8* chip8_data) {
-	printf("3xkk\n");
 	uint8_t	reg = (chip8_data->opcode & 0x0F00) >> 8;
 	if (reg < 16 && chip8_data->registers[reg] == (chip8_data->opcode & 0x00FF))
 		chip8_data->PC += 2;
 }
 
-//	4xkk: SNE Vx, byte - skip next instruction if Vx != kk
+//	4XKK:SNE Vx, byte
 void	_4xkk (CHIP8* chip8_data) {
-	printf("4xkk\n");
 	uint8_t	reg = (chip8_data->opcode & 0x0F00) >> 8;
 	if (reg < 16 && chip8_data->registers[reg] != (chip8_data->opcode & 0x00FF))
 		chip8_data->PC += 2;
 }
 
-//	5xy0: SE Vx, Vy - skip next instruction if Vx = Vy
+//	5XY0:SE Vx, Vy
 void	_5xy0 (CHIP8* chip8_data) {
-	printf("5xy0\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF
 		&& chip8_data->registers[reg_x] == chip8_data->registers[reg_y])
 		chip8_data->PC += 2;
 }
 
-//	6xkk: LD Vx, byte - put kk into register Vx
+//	6XKK:LD Vx, byte
 void	_6xkk (CHIP8* chip8_data) {
-	printf("6xkk\n");
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	if (reg_x < 16)
+	if (reg_x <= 0xF)
 		chip8_data->registers[reg_x] = chip8_data->opcode & 0x00FF;
 }
 
-//	7xkk: ADD Vx, byte - Add kk to the value of register Vx
+//	7XKK:ADD Vx, byte
 void	_7xkk (CHIP8* chip8_data) {
-	printf("7xkk\n");
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	if (reg_x < 16)
+	if (reg_x <= 0xF)
 		chip8_data->registers[reg_x] += chip8_data->opcode & 0x00FF;
 }
 
-//	8xy0: LD Vx, Vy - store the value of register Vy in register Vx
+//	8XY0:LD Vx, Vy
 void	_8xy0 (CHIP8* chip8_data) {
-	printf("8xy0\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_y < 16 && reg_x < 16)
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_y <= 0xF && reg_x <= 0xF)
 		chip8_data->registers[reg_x] = chip8_data->registers[reg_y];
 }
 
-//	8xy1: OR Vx, Vy - performs bitwise OR on the values of Vx and Vy,
-//	then stores the result in Vx
+//	8XY1:OR Vx, Vy
 void	_8xy1 (CHIP8* chip8_data) {
-	printf("8xy1\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16)
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF)
 		chip8_data->registers[reg_x] |= chip8_data->registers[reg_y];
 }
 
-//	8xy2: AND Vx, Vy - performs bitwise AND
+//	8XY2: AND Vx, Vy
 void	_8xy2 (CHIP8* chip8_data) {
-	printf("8xy2\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16)
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF)
 		chip8_data->registers[reg_x] &= chip8_data->registers[reg_y];
 }
 
-//	8xy3: XOR Vx, Vy - performs bitwise XOR
+//	8XY3: XOR Vx, Vy
 void	_8xy3 (CHIP8* chip8_data) {
-	printf("8xy3\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16)
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF)
 		chip8_data->registers[reg_x] ^= chip8_data->registers[reg_y];
 }
 
-//	8xy4: ADD Vx, Vy - The values of Vx and Vy are added together.
-//	If the result is greater than 8 bits (i.e., > 255,) VF is set to 1,
-//	otherwise 0. Only the lowest 8 bits of the result are kept, and stored in Vx
+//	8XY4: ADD Vx, Vy
 void	_8xy4 (CHIP8* chip8_data) {
-	printf("8xy4\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16) {
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF) {
 		uint16_t	sum = chip8_data->registers[reg_x] + chip8_data->registers[reg_y];
-		chip8_data->registers[15] = sum > 0xFF ? 1 : 0;
+		chip8_data->registers[0xF] = sum > 0xFF ? 1 : 0;
 		chip8_data->registers[reg_x] = sum & 0xFF;
 	}
 }
 
-//	8xy5: SUB Vx, Vy - If Vx > Vy, then VF is set to 1, otherwise 0.
-//	Then Vy is subtracted from Vx, and the results stored in Vx.
+//	8XY5: SUB Vx, Vy
 void	_8xy5 (CHIP8* chip8_data) {
-	printf("8xy5\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16) {
-
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF) {
+		chip8_data->registers[0xF] = chip8_data->registers[reg_x] >= chip8_data->registers[reg_y] ? 1 : 0;
+		chip8_data->registers[reg_x] = (chip8_data->registers[reg_x] - chip8_data->registers[reg_y]) & 0xFF;
 	}
 }
 
-//	8xy6: SHR Vx {, Vy} - If the least-significant bit of Vx is 1,
-//	then VF is set to 1, otherwise 0. Then Vx is divided by 2.
+//	8XY6: SHR Vx {, Vy}
 void	_8xy6 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("8xy6\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF) {
+		chip8_data->registers[reg_x] = chip8_data->registers[reg_y];
+		chip8_data->registers[0xF] = chip8_data->registers[reg_x] & 0x1;
+		chip8_data->registers[reg_x] >>= 1;
+	}
 }
 
-//	8xy7: SUBN Vx, Vy - If Vy > Vx, then VF is set to 1, otherwise 0.
-//	Then Vx is subtracted from Vy, and the results stored in Vx.
+//	8XY7:SUBN Vx, Vy
 void	_8xy7 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("8xy7\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF) {
+		chip8_data->registers[0xF] = chip8_data->registers[reg_y] >= chip8_data->registers[reg_x] ? 1 : 0;
+		chip8_data->registers[reg_x] = (chip8_data->registers[reg_y] - chip8_data->registers[reg_x]) & 0xFF;
+	}
+
 }
 
-//	8xyE: SHL Vx {, Vy} - If the most-significant bit of Vx is 1,
-//	then VF is set to 1, otherwise to 0. Then Vx is multiplied by 2.
+//	8XYE:SHL Vx {, Vy}
 void	_8xyE (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("8xyE\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF) {
+		chip8_data->registers[reg_x] = chip8_data->registers[reg_y];
+		chip8_data->registers[0xF] = (chip8_data->registers[reg_x] & 0x80) >> 7;
+		chip8_data->registers[reg_x] <<= 1;
+		chip8_data->registers[reg_x] &= 0xFF;
+	}
 }
 
-//	9xy0: SNE Vx, Vy - the values of  Vx and Vy are compared,
-//	and if they are not equal, the PC in increased by 2
+//	9XY0: SNE Vx, Vy
 void	_9xy0 (CHIP8* chip8_data) {
-	printf("9xy0\n");
-	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	uint8_t	reg_y = (chip8_data->opcode & 0x00F0) >> 4;
-	if (reg_x < 16 && reg_y < 16
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
+	if (reg_x <= 0xF && reg_y <= 0xF
 		&& chip8_data->registers[reg_x] != chip8_data->registers[reg_y])
 		chip8_data->PC += 2;
 }
 
-//	Annn: LD I, addr - the value of register I is set to nnn
+//	ANNN: LD I, addr
 void	_Annn (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Annn\n");
+	chip8_data->IR = chip8_data->opcode & 0x0FFF;
 }
 
-//	Bnnn: JP V0, addr - the PC is set to nnn plus the value of V0
+//	BNNN: JP V0, addr
 void	_Bnnn (CHIP8* chip8_data) {
-	printf("Bnnn\n");
 	chip8_data->PC = (chip8_data->opcode & 0x0FFF) + chip8_data->registers[0];
 }
 
-//	Cxkk: RND Vx, byte - generates a random number from 0 to 255,
-//	which is then ANDed with the value kk. The results are stored in Vx
+//	CXKK:RND Vx, byte
 void	_Cxkk (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Cxkk\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF) {
+		uint16_t	kk = chip8_data->opcode & 0x00FF;
+		chip8_data->registers[reg_x] = kk & (rand() % 255);
+	}
 }
 
-//	Dxyn: DRW Vx, Vy, nibble - Display n-byte sprite starting at
-//	memory location I at (Vx, Vy), set VF = collision
+//	DXYN - DRW Vx, Vy, nibble
 void	_Dxyn (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Dxyn\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
+		reg_y = (chip8_data->opcode & 0x00F0) >> 4,
+		n_height = chip8_data->opcode & 0x000F;
+	if (reg_x <= 0xF && reg_y <= 0xF) {
+		unsigned x = chip8_data->registers[reg_x] % DISPLAY_WIDTH;
+		unsigned y = chip8_data->registers[reg_y] % DISPLAY_HEIGHT;
+		uint8_t sprite_byte, sprite_pixel;
+		uint32_t *display_pixel;
+		chip8_data->registers[0xF] = 0;
+		for (unsigned row = 0; row < n_height; row++) {
+			sprite_byte = chip8_data->RAM[chip8_data->IR + row];
+			for (unsigned col = 0; col < 8; col++) {
+				if (x + col >= DISPLAY_WIDTH || y + row >= DISPLAY_HEIGHT)
+					continue;
+				sprite_pixel = (sprite_byte >> (7 - col)) & 0x1;
+				display_pixel = &chip8_data->display[(y + row) * DISPLAY_WIDTH + (x + col)];
+				if (*display_pixel == 1 && sprite_pixel == 1)
+					chip8_data->registers[0xF] = 1;
+				*display_pixel ^= sprite_pixel;
+			}
+		}
+		render_display(chip8_data);
+	}
 }
 
-//	Ex9E: SKP Vx - Skip next instruction if key with the value of Vx is pressed.
-//	Checks the keyboard, and if the key corresponding to the value of Vx
-//	is currently in the down position, PC is increased by 2.
+//	EX9E:SKP Vx
 void	_Ex9E (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Ex9E\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF && chip8_data->keys[ reg_x ]) {
+		chip8_data->keys[ reg_x ] = 0;
+		chip8_data->PC += 2;
+	}
 }
 
-//	ExA1: SKNP Vx - skip next instruction if key of the value is not pressed.
+//	EXA1:SKNP Vx
 void	_ExA1 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("ExA1\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF && !chip8_data->keys[ reg_x ]) {
+		chip8_data->PC += 2;
+	}
 }
 
-//	Fx07: LD Vx, DT - set Vx = delay timer value
-//	the value of DT is placed into Vx
+//	FX07: LD Vx, DT
 void	_Fx07 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx07\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF)
+		chip8_data->registers[reg_x] = chip8_data->DT;
 }
 
-//	Fx0A: LD Vx, K - wait for a key pres, store the value of the key in Vx.
-//	all execution stops until a key is pressed, then the value of that key
-//	is stored in Vx
+//	FX0A:LD Vx, K
 void	_Fx0A (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx0A\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF) {
+		chip8_data->halt = 1;
+		chip8_data->key_register = reg_x;
+		chip8_data->PC -= 2;
+	}
 }
 
-//	Fx15: LD DT, Vx - set delay timer = Vx.
-//	DT is set equal to the value of Vx
+//	FX15: LD DT, Vx
 void	_Fx15 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx15\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF)
+		chip8_data->DT = chip8_data->registers[reg_x];
 }
 
-//	Fx18: LD ST, Vx - set sound timer = Vx.
-//	ST is set equal to the value of Vx
+//	FX18: LD ST, Vx - set sound timer = Vx.
 void	_Fx18 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx18\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF)
+		chip8_data->ST = chip8_data->registers[reg_x];
 }
 
-//	Fx1E: ADD I, Vx - set I = I + Vx.
-//	the values of I and Vx are added,
-//	and the result are stored in I
+//	FX1E: ADD I, Vx - set I = I + Vx.
 void	_Fx1E (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx1E\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x < 16) {
+		chip8_data->IR += chip8_data->registers[reg_x];
+		chip8_data->IR = chip8_data->IR & 0xFFF;
+	}
 }
 
-//	Fx29: LD F, Vx - set I = location of sprite for digit Vx.
-//	the value of I is set to the location for the hex sprite corresponding
-//	to the value of Vx.
+//	FX29:LD F, Vx - set I = location of sprite for digit Vx.
 void	_Fx29 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx29\n");
+	uint8_t	vx = (chip8_data->opcode & 0x0F00) >> 8;
+	if (vx <= 0xF)
+		chip8_data->IR = vx * 5 + FONTS_START;
 }
 
-//	Fx33: LD B, Vx - store BCD representation of Vx in memory location I, I+1, and I+2
-//	takes the decimal value of Vx, and places the hundreds digit in memory at location in I,
-//	the tens digit at location I+1, and the ones digit at location I+2.
+//	FX33:LD B, Vx - store BCD representation of Vx in memory location I, I+1, and I+2
 void	_Fx33 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx33\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	if (reg_x <= 0xF && chip8_data->IR >= MEMORY_START
+		&& chip8_data->IR + 2 < chip8_data->memory_occupied + MEMORY_START) {
+		chip8_data->RAM[ chip8_data->IR ] = chip8_data->registers[reg_x] / 100;
+		chip8_data->RAM[ chip8_data->IR + 1 ] = (chip8_data->registers[reg_x] / 10) % 10;
+		chip8_data->RAM[ chip8_data->IR + 2 ] = chip8_data->registers[reg_x] % 10;
+	}
 }
 
-//	Fx55: LD [I], Vx - store registers V0 through Vx in memory starting at location I.
-//	copied the values of registers V0 through Vx into memory, starting at the address in I.
+//	FX55: LD [I], Vx 
 void	_Fx55 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx55\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint16_t	IR = chip8_data->IR;
+	if (IR >= MEMORY_START && IR + reg_x < chip8_data->memory_occupied + MEMORY_START && reg_x <= 0xF) {
+		for (uint8_t reg = 0; reg <= reg_x; reg++)
+			chip8_data->RAM[IR + reg] = chip8_data->registers[reg];
+	}
 }
 
-//	Fx65: Lx Vx, [I] - read registers V0 through Vx from memory starting at location I
-//	reads the values from memory starting at location I into registers V0 through Vx.
+//	FX65: Lx Vx, [I]
 void	_Fx65 (CHIP8* chip8_data) {
-	(void)chip8_data;
-	printf("Fx65\n");
+	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint16_t	IR = chip8_data->IR;
+	for (uint8_t reg = 0; reg <= reg_x && reg <= 0xF && IR < chip8_data->memory_occupied + MEMORY_START
+		&& IR > MEMORY_START; reg++, IR++)
+		chip8_data->registers[reg] = chip8_data->RAM[IR];
 }
 
 /*
@@ -368,68 +522,136 @@ void	_Fx65 (CHIP8* chip8_data) {
 */
 
 // /// /	CYCLE
-void	instruction_cycle(CHIP8* chip8_data) {
-	//	instruction tables
-	void	(*_0_7_set[7]) (CHIP8*) = { _1nnn, _2nnn, _3xkk, _4xkk, _5xy0, _6xkk, _7xkk };
-	void	(*_8s_set[9]) (CHIP8*) = { _8xy0, _8xy1, _8xy2, _8xy3, _8xy4, _8xy5, _8xy6, _8xy7, _8xyE };
-	void	(*_9_D_set[5]) (CHIP8*) = { _9xy0, _Annn, _Bnnn, _Cxkk, _Dxyn };
-	void	(*_Es_set[2]) (CHIP8*) = { _Ex9E, _ExA1 };
-	void	(*_Fs_set[9]) (CHIP8*) = { _Fx07, _Fx0A, _Fx15, _Fx18, _Fx1E, _Fx29, _Fx33, _Fx55, _Fx65};
 
-	chip8_data->PC = *(chip8_data->RAM + MEMORY_START);
+void	instruction_cycle(void *p) {
 	uint16_t	instruction, valid_instruction;
+	CHIP8 *chip8_data = (CHIP8*)p;
 
-	while (1) {
-		chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
-		chip8_data->PC += 2;
-		valid_instruction = 1;
-		
-		instruction = chip8_data->opcode & 0xF000;
+	chip8_data->DT -= chip8_data->DT ? 1 : 0;
+	chip8_data->ST -= chip8_data->ST ? 1 : 0;
 
-		if (instruction > 0x0000 && instruction < 0x8000)
-			_0_7_set[(instruction - 0x1000) / 0x1000](chip8_data);
-
-		else if (instruction > 0x8000 && instruction < 0xE000)
-			_9_D_set[(instruction - 0x9000) / 0x1000](chip8_data);
-
-		else if (instruction == 0xF000)
-			switch (chip8_data->opcode & 0x000F) {
-				case 0x7:	_Fs_set[0](chip8_data); break;
-				case 0xA: _Fs_set[1](chip8_data); break;
-				case 0x5: _Fs_set[2](chip8_data); break;
-				case 0x8: _Fs_set[3](chip8_data); break;
-				case 0xE: _Fs_set[4](chip8_data); break;
-				case 0x9: _Fs_set[5](chip8_data); break;
-				case 0x3: _Fs_set[6](chip8_data); break;
-				default: valid_instruction = 0;
+	for (unsigned i = 0; i <= 0xF; i++)
+		if (chip8_data->keys[i]) {
+			if (chip8_data->halt) {
+				chip8_data->registers[chip8_data->key_register] = i;
+				chip8_data->keys[i] = 0;
+				chip8_data->halt = 0;
+				chip8_data->PC += 2;
+				return;
 			}
-		else {
-			switch (instruction) {
-				case 0x0000:
-					if (!(chip8_data->opcode & 0x000F))
-						_00E0(chip8_data);
-					else if ((chip8_data->opcode & 0x000F) == 0xE)
-						_00EE(chip8_data);
-					break;
-				case 0x8000:
-					if ((chip8_data->opcode & 0x000F) == 0xE || (chip8_data->opcode & 0x000F) < 0x8)
-						_8s_set[chip8_data->opcode & 0x000F](chip8_data);
-					break;
-				case 0xE000:
-					if ((chip8_data->opcode & 0x000F) == 0xE)
-						_Es_set[0](chip8_data);
-					else if ((chip8_data->opcode & 0x000F) == 0x1)
-						_Es_set[1](chip8_data);
-					break;
-				default:
-					valid_instruction = 0;
-			}
+			else	chip8_data->keys[i]--;
 		}
-		if (!valid_instruction
-			|| chip8_data->PC >= *(chip8_data->RAM + MEMORY_START + chip8_data->memory_occupied)
-			|| chip8_data->PC < *(chip8_data->RAM + MEMORY_START))
-			break;
+
+	if (chip8_data->halt)
+		return;
+
+	chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
+	chip8_data->PC += 2;
+	valid_instruction = 1;
+		
+	instruction = chip8_data->opcode & 0xF000;
+
+	if (instruction == 0x0000)
+		switch (chip8_data->opcode & 0x00FF) {
+			case 0x00E0: _00E0(chip8_data); break;
+			case 0x00EE: _00EE(chip8_data); break;
+			default: valid_instruction = 0;
+		}
+	else if (instruction >= 0x1000 && instruction <= 0x7000)
+		chip8_data->_0_7_set[(instruction >> 0xC) - 0x1](chip8_data);
+	else if (instruction == 0x8000) {
+		uint8_t n = chip8_data->opcode & 0x000F;
+		if (n <= 0x7 || n == 0xE)
+			chip8_data->_8s_set[n](chip8_data);
+		else	valid_instruction = 0;
 	}
+	else if (instruction >= 0x9000 && instruction <= 0xD000)
+		chip8_data->_9_D_set[(instruction >> 0xC) - 0x9](chip8_data);
+	else if (instruction == 0xE000)
+		switch (chip8_data->opcode & 0x00FF) {
+			case 0x009E: chip8_data->_Es_set[0](chip8_data); break;
+			case 0x00A1: chip8_data->_Es_set[1](chip8_data); break;
+			default: valid_instruction = 0;
+		}
+	else if (instruction == 0xF000)
+		switch (chip8_data->opcode & 0x00FF) {
+			case 0x0007: chip8_data->_Fs_set[0](chip8_data); break;
+			case 0x000A: chip8_data->_Fs_set[1](chip8_data); break;
+			case 0x0015: chip8_data->_Fs_set[2](chip8_data); break;
+			case 0x0018: chip8_data->_Fs_set[3](chip8_data); break;
+			case 0x001E: chip8_data->_Fs_set[4](chip8_data); break;
+			case 0x0029: chip8_data->_Fs_set[5](chip8_data); break;
+			case 0x0033: chip8_data->_Fs_set[6](chip8_data); break;
+			case 0x0055: chip8_data->_Fs_set[7](chip8_data); break;
+			case 0x0065: chip8_data->_Fs_set[8](chip8_data); break;
+			default: valid_instruction = 0;
+		}
+	else	valid_instruction = 0;
+
+	if (!valid_instruction
+		|| chip8_data->PC > MEMORY_SIZE
+		|| chip8_data->PC > chip8_data->memory_occupied + MEMORY_START
+		|| chip8_data->PC < MEMORY_START)
+		close_hook(chip8_data);
+}
+
+void	load_instructions(CHIP8* chip8_data) {
+	chip8_data->_0_7_set[0] = _1nnn;
+	chip8_data->_0_7_set[1] = _2nnn;
+	chip8_data->_0_7_set[2] = _3xkk;
+	chip8_data->_0_7_set[3] = _4xkk;
+	chip8_data->_0_7_set[4] = _5xy0;
+	chip8_data->_0_7_set[5] = _6xkk;
+	chip8_data->_0_7_set[6] = _7xkk;
+
+	chip8_data->_8s_set[0] = _8xy0;
+	chip8_data->_8s_set[1] = _8xy1;
+	chip8_data->_8s_set[2] = _8xy2;
+	chip8_data->_8s_set[3] = _8xy3;
+	chip8_data->_8s_set[4] = _8xy4;
+	chip8_data->_8s_set[5] = _8xy5;
+	chip8_data->_8s_set[6] = _8xy6;
+	chip8_data->_8s_set[7] = _8xy7;
+	chip8_data->_8s_set[8] = _8xyE;
+
+	chip8_data->_9_D_set[0] = _9xy0;
+	chip8_data->_9_D_set[1] = _Annn;
+	chip8_data->_9_D_set[2] = _Bnnn;
+	chip8_data->_9_D_set[3] = _Cxkk;
+	chip8_data->_9_D_set[4] = _Dxyn;
+
+	chip8_data->_Es_set[0] = _Ex9E;
+	chip8_data->_Es_set[1] = _ExA1;
+
+	chip8_data->_Fs_set[0] = _Fx07;
+	chip8_data->_Fs_set[1] = _Fx0A;
+	chip8_data->_Fs_set[2] = _Fx15;
+	chip8_data->_Fs_set[3] = _Fx18;
+	chip8_data->_Fs_set[4] = _Fx1E;
+	chip8_data->_Fs_set[5] = _Fx29;
+	chip8_data->_Fs_set[6] = _Fx33;
+	chip8_data->_Fs_set[7] = _Fx55;
+	chip8_data->_Fs_set[8] = _Fx65;
+}
+
+int	init_window(CHIP8 *chip8_data, char *ROM) {
+	WIN *window = chip8_data->window;
+	window->height = DEF_HEIGHT;
+	window->width = DEF_WIDTH;
+	window->mlx_ptr = mlx_init(window->width, window->height, ROM, true);
+	if (!window->mlx_ptr)
+		return 0;
+	window->mlx_img = mlx_new_image(window->mlx_ptr, window->width, window->height);
+	if (!window->mlx_img) {
+		free(window->mlx_ptr);
+		return 0;
+	}
+	draw_background(window, 0x000000FF);
+	mlx_image_to_window(window->mlx_ptr, window->mlx_img, 0, 0);
+	mlx_key_hook(window->mlx_ptr, key_hook, chip8_data);
+	mlx_close_hook(window->mlx_ptr, close_hook, chip8_data);
+	mlx_resize_hook(window->mlx_ptr, resize_hook, chip8_data);
+	return 1;
 }
 
 int	main(int c, char **v)
@@ -455,9 +677,19 @@ int	main(int c, char **v)
 	// /// /		LOADING FONTS
 	load_fonts(chip8_data);
 
-	/// // /		CYCLE
-	instruction_cycle(chip8_data);
+	/// / //		INIT DISPLAY
+	chip8_data->window = malloc(sizeof(WIN));
+	if (!chip8_data->window || !init_window(chip8_data, v[1])) {
+		printf("failed to initialize MLX window\n");
+		free(chip8_data);
+		return 1;
+	}
 
-	free(chip8_data);
-	return 0;
+	/// /// /		LOADING INSTRUCTIONS
+	load_instructions(chip8_data);
+
+	/// // /		CYCLE
+	chip8_data->PC = MEMORY_START;
+	mlx_loop_hook(chip8_data->window->mlx_ptr, instruction_cycle, chip8_data);
+	mlx_loop(chip8_data->window->mlx_ptr);
 }
