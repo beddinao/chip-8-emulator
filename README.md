@@ -4,8 +4,7 @@
 <a href="https://github.com/codam-coding-college/MLX42">MLX42</a>
 
 ```
-A simple implementation of a CHIP-8 virtual machine.
-This project serves as a foundational exercise in understanding the mechanics of emulation.
+A simple CHIP-8 emulator.
 
 • 64x32 pixel monochrome display.
 • 4K of 8-bit RAM.
