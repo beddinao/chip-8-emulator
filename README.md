@@ -1,3 +1,3 @@
 # *`CHIP-8-EMULATOR`*
 
-[](./set.txt)
+[set](./set.txt)
