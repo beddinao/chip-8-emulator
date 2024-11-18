@@ -1,3 +1,5 @@
+<img src="./images/logo_1.png" />
+
 # *`CHIP-8-EMULATOR`*
 
 <a href="https://en.wikipedia.org/wiki/CHIP-8">CHIP-8</a> <br/>
