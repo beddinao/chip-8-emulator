@@ -17,4 +17,8 @@ A simple CHIP-8 emulator.
 • 8-bit delay timer (decremented at 60 Hz) until it reaches 0.
 • 8-bit sound timer (decremented at 60 Hz), beeps when it reaches 0
 • Hexadecimal Keypad: 16 keys with codes ranging from 0x0 to 0xF.
+  1 2 3 C
+  4 5 6 D
+  7 8 9 E
+  A 0 B F
 ```
