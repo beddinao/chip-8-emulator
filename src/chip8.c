@@ -5,7 +5,6 @@
 //	00E0:CLS
 void	_00E0 (CHIP8* chip8_data) {
 	memset(chip8_data->display, 0, sizeof(chip8_data->display));
-	draw_background(chip8_data->window, 0x000000FF);
 }
 
 //	00EE:RET
@@ -56,7 +55,7 @@ void	_5xy0 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
 		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
 	if (reg_x <= 0xF && reg_y <= 0xF
-		&& chip8_data->registers[reg_x] == chip8_data->registers[reg_y])
+			&& chip8_data->registers[reg_x] == chip8_data->registers[reg_y])
 		chip8_data->PC += 2;
 }
 
@@ -166,7 +165,7 @@ void	_9xy0 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8,
 		reg_y = (chip8_data->opcode & 0x00F0) >> 4;
 	if (reg_x <= 0xF && reg_y <= 0xF
-		&& chip8_data->registers[reg_x] != chip8_data->registers[reg_y])
+			&& chip8_data->registers[reg_x] != chip8_data->registers[reg_y])
 		chip8_data->PC += 2;
 }
 
@@ -195,24 +194,24 @@ void	_Dxyn (CHIP8* chip8_data) {
 		reg_y = (chip8_data->opcode & 0x00F0) >> 4,
 		n_height = chip8_data->opcode & 0x000F;
 	if (reg_x <= 0xF && reg_y <= 0xF) {
-		unsigned x = chip8_data->registers[reg_x] % DISPLAY_WIDTH;
-		unsigned y = chip8_data->registers[reg_y] % DISPLAY_HEIGHT;
+		unsigned x = chip8_data->registers[reg_x] % DIS_W;
+		unsigned y = chip8_data->registers[reg_y] % DIS_H;
 		uint8_t sprite_byte, sprite_pixel;
 		uint32_t *display_pixel;
 		chip8_data->registers[0xF] = 0;
 		for (unsigned row = 0; row < n_height; row++) {
 			sprite_byte = chip8_data->RAM[chip8_data->IR + row];
 			for (unsigned col = 0; col < 8; col++) {
-				if (x + col >= DISPLAY_WIDTH || y + row >= DISPLAY_HEIGHT)
+				if (x + col >= DIS_W || y + row >= DIS_H)
 					continue;
 				sprite_pixel = (sprite_byte >> (7 - col)) & 0x1;
-				display_pixel = &chip8_data->display[(y + row) * DISPLAY_WIDTH + (x + col)];
+				display_pixel = &chip8_data->display[(y + row) * DIS_W + (x + col)];
 				if (*display_pixel == 1 && sprite_pixel == 1)
 					chip8_data->registers[0xF] = 1;
 				*display_pixel ^= sprite_pixel;
 			}
 		}
-		render_display(chip8_data);
+		//render_display(chip8_data);
 	}
 }
 
@@ -284,7 +283,7 @@ void	_Fx29 (CHIP8* chip8_data) {
 void	_Fx33 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	if (reg_x <= 0xF && chip8_data->IR >= MEMORY_START
-		&& chip8_data->IR + 2 < chip8_data->memory_occupied + MEMORY_START) {
+			&& chip8_data->IR + 2 < chip8_data->memory_occupied + MEMORY_START) {
 		chip8_data->RAM[ chip8_data->IR ] = chip8_data->registers[reg_x] / 100;
 		chip8_data->RAM[ chip8_data->IR + 1 ] = (chip8_data->registers[reg_x] / 10) % 10;
 		chip8_data->RAM[ chip8_data->IR + 2 ] = chip8_data->registers[reg_x] % 10;
@@ -306,7 +305,7 @@ void	_Fx65 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	uint16_t	IR = chip8_data->IR;
 	for (uint8_t reg = 0; reg <= reg_x && reg <= 0xF && IR < chip8_data->memory_occupied + MEMORY_START
-		&& IR > MEMORY_START; reg++, IR++)
+			&& IR > MEMORY_START; reg++, IR++)
 		chip8_data->registers[reg] = chip8_data->RAM[IR];
 }
 
@@ -316,80 +315,105 @@ void	_Fx65 (CHIP8* chip8_data) {
    - (4-8)   opcode & 0x0F00 >> 8 |
    - (8-12)  opcode & 0x00F0 >> 4 |
    - (12-16) opcode & 0x000F
-*/
+   */
 
 // /// /	CYCLE
 
-void	instruction_cycle(void *p) {
+void	*instruction_cycle(void *p) {
 	uint16_t	instruction, valid_instruction;
 	CHIP8 *chip8_data = (CHIP8*)p;
+	chip8_data->PC = MEMORY_START;
+	struct timeval f_time, s_time;
+	memset(&f_time, 0, sizeof(f_time));
+	memset(&s_time, 0, sizeof(s_time));
 
-	chip8_data->DT -= chip8_data->DT ? 1 : 0;
-	chip8_data->ST -= chip8_data->ST ? 1 : 0;
-
-	for (unsigned i = 0; i <= 0xF; i++)
-		if (chip8_data->keys[i]) {
-			if (chip8_data->halt) {
-				chip8_data->registers[chip8_data->key_register] = i;
-				chip8_data->keys[i] = 0;
-				chip8_data->halt = 0;
-				chip8_data->PC += 2;
-				return;
-			}
-			else	chip8_data->keys[i]--;
+	gettimeofday(&f_time, NULL);
+	while (1) {
+		pthread_mutex_lock(&chip8_data->state_mutex);
+		if (chip8_data->emu_state) {
+			pthread_mutex_unlock(&chip8_data->state_mutex);
+			return 0;
 		}
-
-	if (chip8_data->halt)
-		return;
-
-	chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
-	chip8_data->PC += 2;
-	valid_instruction = 1;
+		pthread_mutex_unlock(&chip8_data->state_mutex);
 		
-	instruction = chip8_data->opcode & 0xF000;
+		gettimeofday(&s_time, NULL);
+		if (abs(s_time.tv_usec - f_time.tv_usec) > TIME_DIFF)
+			gettimeofday(&f_time, NULL);
+		else	continue;
 
-	if (instruction == 0x0000)
-		switch (chip8_data->opcode & 0x00FF) {
-			case 0x00E0: _00E0(chip8_data); break;
-			case 0x00EE: _00EE(chip8_data); break;
-			default: valid_instruction = 0;
+		chip8_data->DT -= (chip8_data->DT ? 1 : 0);
+		chip8_data->ST -= (chip8_data->ST ? 1 : 0);
+
+		valid_instruction = 1;
+		for (unsigned i = 0; i <= 0xF; i++)
+			if (chip8_data->keys[i]) {
+				if (chip8_data->halt) {
+					chip8_data->registers[chip8_data->key_register] = i;
+					chip8_data->keys[i] = 0;
+					chip8_data->halt = 0;
+					chip8_data->PC += 2;
+					valid_instruction = 0;
+					break;
+				}
+				else	chip8_data->keys[i]--;
+			}
+
+		if (chip8_data->halt || !valid_instruction)
+			continue;
+
+		chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
+		chip8_data->PC += 2;
+
+		instruction = chip8_data->opcode & 0xF000;
+
+		if (instruction == 0x0000)
+			switch (chip8_data->opcode & 0x00FF) {
+				case 0x00E0: _00E0(chip8_data); break;
+				case 0x00EE: _00EE(chip8_data); break;
+				default: valid_instruction = 0;
+			}
+		else if (instruction >= 0x1000 && instruction <= 0x7000)
+			chip8_data->_0_7_set[(instruction >> 0xC) - 0x1](chip8_data);
+		else if (instruction == 0x8000) {
+			uint8_t n = chip8_data->opcode & 0x000F;
+			if (n <= 0x7 || n == 0xE)
+				chip8_data->_8s_set[n](chip8_data);
+			else	valid_instruction = 0;
 		}
-	else if (instruction >= 0x1000 && instruction <= 0x7000)
-		chip8_data->_0_7_set[(instruction >> 0xC) - 0x1](chip8_data);
-	else if (instruction == 0x8000) {
-		uint8_t n = chip8_data->opcode & 0x000F;
-		if (n <= 0x7 || n == 0xE)
-			chip8_data->_8s_set[n](chip8_data);
+		else if (instruction >= 0x9000 && instruction <= 0xD000)
+			chip8_data->_9_D_set[(instruction >> 0xC) - 0x9](chip8_data);
+		else if (instruction == 0xE000)
+			switch (chip8_data->opcode & 0x00FF) {
+				case 0x009E: chip8_data->_Es_set[0](chip8_data); break;
+				case 0x00A1: chip8_data->_Es_set[1](chip8_data); break;
+				default: valid_instruction = 0;
+			}
+		else if (instruction == 0xF000)
+			switch (chip8_data->opcode & 0x00FF) {
+				case 0x0007: chip8_data->_Fs_set[0](chip8_data); break;
+				case 0x000A: chip8_data->_Fs_set[1](chip8_data); break;
+				case 0x0015: chip8_data->_Fs_set[2](chip8_data); break;
+				case 0x0018: chip8_data->_Fs_set[3](chip8_data); break;
+				case 0x001E: chip8_data->_Fs_set[4](chip8_data); break;
+				case 0x0029: chip8_data->_Fs_set[5](chip8_data); break;
+				case 0x0033: chip8_data->_Fs_set[6](chip8_data); break;
+				case 0x0055: chip8_data->_Fs_set[7](chip8_data); break;
+				case 0x0065: chip8_data->_Fs_set[8](chip8_data); break;
+				default: valid_instruction = 0;
+			}
 		else	valid_instruction = 0;
-	}
-	else if (instruction >= 0x9000 && instruction <= 0xD000)
-		chip8_data->_9_D_set[(instruction >> 0xC) - 0x9](chip8_data);
-	else if (instruction == 0xE000)
-		switch (chip8_data->opcode & 0x00FF) {
-			case 0x009E: chip8_data->_Es_set[0](chip8_data); break;
-			case 0x00A1: chip8_data->_Es_set[1](chip8_data); break;
-			default: valid_instruction = 0;
-		}
-	else if (instruction == 0xF000)
-		switch (chip8_data->opcode & 0x00FF) {
-			case 0x0007: chip8_data->_Fs_set[0](chip8_data); break;
-			case 0x000A: chip8_data->_Fs_set[1](chip8_data); break;
-			case 0x0015: chip8_data->_Fs_set[2](chip8_data); break;
-			case 0x0018: chip8_data->_Fs_set[3](chip8_data); break;
-			case 0x001E: chip8_data->_Fs_set[4](chip8_data); break;
-			case 0x0029: chip8_data->_Fs_set[5](chip8_data); break;
-			case 0x0033: chip8_data->_Fs_set[6](chip8_data); break;
-			case 0x0055: chip8_data->_Fs_set[7](chip8_data); break;
-			case 0x0065: chip8_data->_Fs_set[8](chip8_data); break;
-			default: valid_instruction = 0;
-		}
-	else	valid_instruction = 0;
 
-	if (!valid_instruction
-		|| chip8_data->PC > MEMORY_SIZE
-		|| chip8_data->PC > chip8_data->memory_occupied + MEMORY_START
-		|| chip8_data->PC < MEMORY_START)
-		close_hook(chip8_data);
+		if (!valid_instruction
+				|| chip8_data->PC > MEMORY_SIZE
+				|| chip8_data->PC > chip8_data->memory_occupied + MEMORY_START
+				|| chip8_data->PC < MEMORY_START) {
+			pthread_mutex_lock(&chip8_data->state_mutex);
+			chip8_data->emu_state = 1;
+			pthread_mutex_unlock(&chip8_data->state_mutex);
+			break;
+		}
+	}
+	return 0;
 }
 
 void	load_instructions(CHIP8* chip8_data) {
@@ -481,7 +505,7 @@ int	main(int c, char **v)
 		return 1;
 	}
 	srand(time(0));
-	
+
 	CHIP8	*chip8_data = malloc(sizeof(CHIP8));
 	if (!chip8_data) 
 		return 1;
@@ -508,8 +532,10 @@ int	main(int c, char **v)
 	/// /// /		LOADING INSTRUCTIONS
 	load_instructions(chip8_data);
 
-	/// // /		CYCLE
-	chip8_data->PC = MEMORY_START;
-	mlx_loop_hook(chip8_data->window->mlx_ptr, instruction_cycle, chip8_data);
+	/// / //		CYCLE
+	pthread_mutex_init(&chip8_data->display_mutex, NULL);
+	pthread_mutex_init(&chip8_data->state_mutex, NULL);
+	pthread_create(&chip8_data->worker, NULL, instruction_cycle, chip8_data);
+	mlx_loop_hook(chip8_data->window->mlx_ptr, render_display, chip8_data);
 	mlx_loop(chip8_data->window->mlx_ptr);
 }

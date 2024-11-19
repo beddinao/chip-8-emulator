@@ -16,13 +16,20 @@ unsigned	__calc_new_range(unsigned old_value,
 	return (((old_value - old_min) * (new_max - new_min)) / (old_max - old_min)) + new_min;
 }
 
-void	render_display(CHIP8* chip8_data) {
-	unsigned scale_x = chip8_data->window->width / DISPLAY_WIDTH;
-	unsigned scale_y = chip8_data->window->height / DISPLAY_HEIGHT;
+void	render_display(void *p) {
+	CHIP8* chip8_data = (CHIP8*)p;
+	pthread_mutex_lock(&chip8_data->state_mutex);
+	if (chip8_data->emu_state) {
+		pthread_mutex_unlock(&chip8_data->state_mutex);
+		close_hook(chip8_data);
+	}
+	pthread_mutex_unlock(&chip8_data->state_mutex);
+	unsigned scale_x = chip8_data->window->width / DIS_W;
+	unsigned scale_y = chip8_data->window->height / DIS_H;
 	uint32_t color;
-	for (unsigned y = 0; y < DISPLAY_HEIGHT; y++)
-		for (unsigned x = 0; x < DISPLAY_WIDTH; x++) {
-			color = chip8_data->display[y * DISPLAY_WIDTH + x] ? 0xFFFFFF : 0x000000;
+	for (unsigned y = 0; y < DIS_H; y++)
+		for (unsigned x = 0; x < DIS_W; x++) {
+			color = chip8_data->display[y * DIS_W + x] ? 0xFFFFFF : 0x000000;
 			for (unsigned sy = 0; sy < scale_y; sy++)
 				for (unsigned sx = 0; sx < scale_x; sx++)
 					mlx_put_pixel(chip8_data->window->mlx_img, x*scale_x+sx, y*scale_y+sy, color<<8|0xFF);
@@ -34,6 +41,12 @@ void	render_display(CHIP8* chip8_data) {
 void	close_hook(void *p) {
 	CHIP8 *chip8_data = (CHIP8*)p;
 	mlx_terminate(chip8_data->window->mlx_ptr);
+	pthread_mutex_lock(&chip8_data->state_mutex);
+	chip8_data->emu_state = 1;
+	pthread_mutex_unlock(&chip8_data->state_mutex);
+	pthread_join(chip8_data->worker, NULL);
+	pthread_mutex_destroy(&chip8_data->display_mutex);
+	pthread_mutex_destroy(&chip8_data->state_mutex);
 	free(chip8_data->window);
 	free(chip8_data);
 	exit(0);
@@ -113,8 +126,8 @@ int	init_window(CHIP8 *chip8_data, char *ROM) {
 	}
 	draw_background(window, 0x000000FF);
 	mlx_image_to_window(window->mlx_ptr, window->mlx_img, 0, 0);
-	mlx_key_hook(window->mlx_ptr, key_hook, chip8_data);
+	mlx_resize_hook(chip8_data->window->mlx_ptr, resize_hook, chip8_data);
 	mlx_close_hook(window->mlx_ptr, close_hook, chip8_data);
-	mlx_resize_hook(window->mlx_ptr, resize_hook, chip8_data);
+	mlx_key_hook(window->mlx_ptr, key_hook, chip8_data);
 	return 1;
 }
