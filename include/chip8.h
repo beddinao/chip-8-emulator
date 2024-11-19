@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <math.h>
 
 #define	MEMORY_SIZE	0x1000 // 4096
 #define	MEMORY_START	0x200  // 512

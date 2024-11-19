@@ -337,7 +337,7 @@ void	*instruction_cycle(void *p) {
 		pthread_mutex_unlock(&chip8_data->state_mutex);
 		
 		gettimeofday(&s_time, NULL);
-		if (abs(s_time.tv_usec - f_time.tv_usec) > TIME_DIFF)
+		if (abs((int)s_time.tv_usec - (int)f_time.tv_usec) > TIME_DIFF)
 			gettimeofday(&f_time, NULL);
 		else	continue;
 
