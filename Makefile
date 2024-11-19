@@ -3,7 +3,7 @@ SRC = $(wildcard src/*.c)
 HR = $(wildcard include/*.h)
 OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
 CFLAGS = -Iinclude -I./MLX42/include/MLX42 -Werror -Wextra -Wall
-#CFLAGS += -fsanitize=address
+#CFLAGS = -fsanitize=address
 LDFLAGS = ./MLX42/build/libmlx42.a
 UNAME = $(shell uname)
 NAME = chip8
