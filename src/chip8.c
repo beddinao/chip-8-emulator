@@ -220,9 +220,10 @@ void	_Dxyn (CHIP8* chip8_data) {
 //	EX9E:SKP Vx
 void	_Ex9E (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	key = chip8_data->registers[ reg_x ];
 	pthread_mutex_lock(&chip8_data->keys_mutex);
-	if (reg_x <= 0xF && chip8_data->keys[ reg_x ]) {
-		chip8_data->keys[ reg_x ] = 0;
+	if (chip8_data->keys[ key ]) {
+		chip8_data->keys[ key ] = 0;
 		chip8_data->PC += 2;
 	}
 	pthread_mutex_unlock(&chip8_data->keys_mutex);
@@ -231,8 +232,9 @@ void	_Ex9E (CHIP8* chip8_data) {
 //	EXA1:SKNP Vx
 void	_ExA1 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	uint8_t	key = chip8_data->registers[reg_x];
 	pthread_mutex_lock(&chip8_data->keys_mutex);
-	if (reg_x <= 0xF && !chip8_data->keys[ reg_x ]) 
+	if (chip8_data->keys[ key ]) 
 		chip8_data->PC += 2;
 	pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
@@ -247,6 +249,7 @@ void	_Fx07 (CHIP8* chip8_data) {
 //	FX0A:LD Vx, K
 void	_Fx0A (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	printf("ordered halt with key: %i\n", reg_x);
 	if (reg_x <= 0xF) {
 		chip8_data->halt = 1;
 		chip8_data->key_register = reg_x;
