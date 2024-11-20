@@ -29,7 +29,9 @@ void	render_display(void *p) {
 	uint32_t color;
 	for (unsigned y = 0; y < DIS_H; y++)
 		for (unsigned x = 0; x < DIS_W; x++) {
+			pthread_mutex_lock(&chip8_data->display_mutex);
 			color = chip8_data->display[y * DIS_W + x] ? 0xFFFFFF : 0x000000;
+			pthread_mutex_unlock(&chip8_data->display_mutex);
 			for (unsigned sy = 0; sy < scale_y; sy++)
 				for (unsigned sx = 0; sx < scale_x; sx++)
 					mlx_put_pixel(chip8_data->window->mlx_img, x*scale_x+sx, y*scale_y+sy, color<<8|0xFF);
@@ -47,6 +49,7 @@ void	close_hook(void *p) {
 	pthread_join(chip8_data->worker, NULL);
 	pthread_mutex_destroy(&chip8_data->display_mutex);
 	pthread_mutex_destroy(&chip8_data->state_mutex);
+	pthread_mutex_destroy(&chip8_data->keys_mutex);
 	free(chip8_data->window);
 	free(chip8_data);
 	exit(0);
@@ -56,8 +59,11 @@ void	key_hook(mlx_key_data_t keydata, void *p) {
 	if (keydata.action != MLX_PRESS)	return;
 
 	CHIP8* chip8_data = (CHIP8*)p;
-	if (keydata.key == MLX_KEY_ESCAPE)
+	pthread_mutex_lock(&chip8_data->keys_mutex);
+	if (keydata.key == MLX_KEY_ESCAPE) {
+		pthread_mutex_unlock(&chip8_data->keys_mutex);
 		close_hook(p);
+	}
 	else if (keydata.key >= '0' && keydata.key <= '9')
 		chip8_data->keys[keydata.key - '0'] = KEY_PRESS_CYCLES;
 	else if (keydata.key >= MLX_KEY_KP_0 && keydata.key <= MLX_KEY_KP_9) {
@@ -88,6 +94,7 @@ void	key_hook(mlx_key_data_t keydata, void *p) {
 		}
 		chip8_data->keys[ i ] = KEY_PRESS_CYCLES;
 	}
+	pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 void	resize_hook(int width, int height, void *p) {
