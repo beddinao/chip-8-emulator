@@ -205,10 +205,12 @@ void	_Dxyn (CHIP8* chip8_data) {
 				if (x + col >= DIS_W || y + row >= DIS_H)
 					continue;
 				sprite_pixel = (sprite_byte >> (7 - col)) & 0x1;
+				pthread_mutex_lock(&chip8_data->display_mutex);
 				display_pixel = &chip8_data->display[(y + row) * DIS_W + (x + col)];
 				if (*display_pixel == 1 && sprite_pixel == 1)
 					chip8_data->registers[0xF] = 1;
 				*display_pixel ^= sprite_pixel;
+				pthread_mutex_unlock(&chip8_data->display_mutex);
 			}
 		}
 		//render_display(chip8_data);
@@ -218,18 +220,21 @@ void	_Dxyn (CHIP8* chip8_data) {
 //	EX9E:SKP Vx
 void	_Ex9E (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
+	pthread_mutex_lock(&chip8_data->keys_mutex);
 	if (reg_x <= 0xF && chip8_data->keys[ reg_x ]) {
 		chip8_data->keys[ reg_x ] = 0;
 		chip8_data->PC += 2;
 	}
+	pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 //	EXA1:SKNP Vx
 void	_ExA1 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
-	if (reg_x <= 0xF && !chip8_data->keys[ reg_x ]) {
+	pthread_mutex_lock(&chip8_data->keys_mutex);
+	if (reg_x <= 0xF && !chip8_data->keys[ reg_x ]) 
 		chip8_data->PC += 2;
-	}
+	pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 //	FX07: LD Vx, DT
@@ -345,6 +350,7 @@ void	*instruction_cycle(void *p) {
 		chip8_data->ST -= (chip8_data->ST ? 1 : 0);
 
 		valid_instruction = 1;
+		pthread_mutex_lock(&chip8_data->keys_mutex);
 		for (unsigned i = 0; i <= 0xF; i++)
 			if (chip8_data->keys[i]) {
 				if (chip8_data->halt) {
@@ -357,6 +363,7 @@ void	*instruction_cycle(void *p) {
 				}
 				else	chip8_data->keys[i]--;
 			}
+		pthread_mutex_unlock(&chip8_data->keys_mutex);
 
 		if (chip8_data->halt || !valid_instruction)
 			continue;
@@ -535,6 +542,7 @@ int	main(int c, char **v)
 	/// / //		CYCLE
 	pthread_mutex_init(&chip8_data->display_mutex, NULL);
 	pthread_mutex_init(&chip8_data->state_mutex, NULL);
+	pthread_mutex_init(&chip8_data->keys_mutex, NULL);
 	pthread_create(&chip8_data->worker, NULL, instruction_cycle, chip8_data);
 	mlx_loop_hook(chip8_data->window->mlx_ptr, render_display, chip8_data);
 	mlx_loop(chip8_data->window->mlx_ptr);

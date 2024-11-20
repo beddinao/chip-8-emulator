@@ -62,6 +62,7 @@ typedef	struct chip8 {
 	uint8_t		emu_state;
 	pthread_t		worker;
 	pthread_mutex_t	display_mutex;
+	pthread_mutex_t	keys_mutex;
 	pthread_mutex_t	state_mutex;
 }	CHIP8;
 
