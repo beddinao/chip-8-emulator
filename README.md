@@ -5,7 +5,7 @@
 <a href="https://en.wikipedia.org/wiki/CHIP-8">CHIP-8</a> - <a href="https://github.com/codam-coding-college/MLX42">MLX42</a>
 
 ```
-A CHIP-8 emulator, and a good framework for emulating other advanced Consols.
+A CHIP-8 emulator, and a good framework for emulating advanced Consols.
 
 • 64x32 pixel monochrome display.
 • 4K of 8-bit RAM.
