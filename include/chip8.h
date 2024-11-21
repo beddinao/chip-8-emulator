@@ -1,3 +1,6 @@
+#ifndef CHIP8_H
+# define CHIP8_H
+
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -69,3 +72,5 @@ typedef	struct chip8 {
 int	init_window(CHIP8*, char*);
 void	close_hook(void*);
 void	render_display(void*);
+
+#endif
