@@ -25,7 +25,7 @@
 #define	DEF_WIDTH		0x640
 #define	MIN_HEIGHT	0x190  // 400
 #define	MIN_WIDTH		0x3E8  // 1000
-#define	CYCLES_PER_TIMER	0xFFFFF // Huge fucking difference
+#define	CYCLES_PER_TIMER	0xFFFFF
 #define	KEY_PRESS_CYCLES	0x50
 #define	TIME_DIFF		0x7D0
 
