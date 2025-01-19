@@ -1,4 +1,3 @@
-<img src="./images/logo_1.png" />
 
 # *`CHIP-8-EMULATOR`*
 
