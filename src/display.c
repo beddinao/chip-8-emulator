@@ -7,7 +7,7 @@ void	draw_background(WIN *window, uint32_t color) {
 			(color >> 24) & 0xFF,
 			(color >> 16) & 0xFF,
 			(color >> 8) & 0xFF,
-			0xFF);
+			color & 0xFF);
 
 	SDL_RenderClear(window->renderer);
 }
@@ -45,16 +45,32 @@ void	render_display(CHIP8 *chip8_data) {
 		scale_x = chip8_data->window->width / DIS_W;
 		scale_y = chip8_data->window->height / DIS_H;
 
-		/*for (unsigned y = 0; y < DIS_H; y++)
+		for (unsigned y = 0; y < DIS_H; y++)
 			for (unsigned x = 0; x < DIS_W; x++) {
 				pthread_mutex_lock(&chip8_data->display_mutex);
-				color = chip8_data->display[y * DIS_W + x] ? 0xFFFFFF : 0x000000;
+				color = chip8_data->display[y * DIS_W + x] ? 0xFFFFFFFF : 0x000000FF;
 				pthread_mutex_unlock(&chip8_data->display_mutex);
+
+				SDL_SetRenderDrawColor(chip8_data->window->renderer,
+						(color >> 24) & 0xFF,
+						(color >> 16) & 0xFF,
+						(color >> 8) & 0xFF,
+						0xFF);
+				
+				SDL_FPoint points[scale_x*scale_y];
+
+				unsigned In = 0;
+
 				for (unsigned sy = 0; sy < scale_y; sy++)
-					for (unsigned sx = 0; sx < scale_x; sx++)
-						mlx_put_pixel(chip8_data->window->mlx_img, x*scale_x+sx, y*scale_y+sy, color<<8|0xFF);
+					for (unsigned sx = 0; sx < scale_x; sx++) {
+						points[In].x = x*scale_x+sx;
+						points[In++].y = y*scale_y+sy;
+					}
+
+				SDL_RenderPoints(chip8_data->window->renderer, points, In);
 			}
-		*/
+	
+		SDL_RenderPresent(chip8_data->window->renderer);	
 
 	}
 }
@@ -72,6 +88,8 @@ int	init_window(CHIP8 *chip8_data, char *ROM) {
 		return 0;
 	}
 	SDL_SetWindowMinimumSize(chip8_data->window->win, MIN_WIDTH, MIN_HEIGHT);
-	draw_background(chip8_data->window, 0xFFFFFFFF);
+	//draw_background(chip8_data->window, 0xFFFFFFFF);
+	draw_background(chip8_data->window, 0x0000FFFF);
+	SDL_RenderPresent(chip8_data->window->renderer);
 	return 1;
 }
