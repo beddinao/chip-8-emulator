@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <time.h>
-#include "MLX42.h"
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/time.h>
 #include <math.h>
+#include <SDL3/SDL.h> 
 
 #define	MEMORY_SIZE	0x1000 // 4096
 #define	MEMORY_START	0x200  // 512
@@ -30,8 +30,9 @@
 #define	TIME_DIFF		0x7D0
 
 typedef	struct {
-	mlx_t		*mlx_ptr;
-	mlx_image_t	*mlx_img;
+	SDL_Window	*win;
+	SDL_Renderer	*renderer;
+
 	unsigned		width;
 	unsigned		height;
 }	WIN;
@@ -69,8 +70,12 @@ typedef	struct chip8 {
 	pthread_mutex_t	state_mutex;
 }	CHIP8;
 
+/* display.c */
 int	init_window(CHIP8*, char*);
+void	render_display(CHIP8*);
+
+/* hooks.c */
+void	key_hook(CHIP8*, SDL_Event*, int);
 void	close_hook(void*);
-void	render_display(void*);
 
 #endif
