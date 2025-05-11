@@ -535,6 +535,7 @@ int	main(int c, char **v)
 	chip8_data->window = malloc(sizeof(WIN));
 	if (!chip8_data->window || !init_window(chip8_data, v[1])) {
 		printf("failed to initialize SDL window\n");
+		if (chip8_data->window) free(chip8_data->window);
 		free(chip8_data);
 		return 1;
 	}

@@ -70,8 +70,9 @@ typedef	struct chip8 {
 	pthread_mutex_t	state_mutex;
 }	CHIP8;
 
+/* display.c */
 int	init_window(CHIP8*, char*);
-void	render_display(void*);
+void	render_display(CHIP8*);
 
 /* hooks.c */
 void	key_hook(CHIP8*, SDL_Event*, int);

@@ -3,13 +3,12 @@
 // //// /		DRAWING UTILS
 
 void	draw_background(WIN *window, uint32_t color) {
-	/*SDL_SetRenderDrawColor(window->renderer,
+	SDL_SetRenderDrawColor(window->renderer,
 			(color >> 24) & 0xFF,
 			(color >> 16) & 0xFF,
 			(color >> 8) & 0xFF,
-			0xFF);*/
+			0xFF);
 
-	SDL_SetRenderDrawColor(window->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
 	SDL_RenderClear(window->renderer);
 }
 
@@ -21,8 +20,7 @@ unsigned	__calc_new_range(unsigned old_value,
 	return (((old_value - old_min) * (new_max - new_min)) / (old_max - old_min)) + new_min;
 }
 
-void	render_display(void *p) {
-	CHIP8* chip8_data = (CHIP8*)p;
+void	render_display(CHIP8 *chip8_data) {
 	unsigned scale_x, scale_y;
 	uint32_t color;
 	SDL_Event event;
@@ -57,32 +55,23 @@ void	render_display(void *p) {
 						mlx_put_pixel(chip8_data->window->mlx_img, x*scale_x+sx, y*scale_y+sy, color<<8|0xFF);
 			}
 		*/
+
 	}
 }
 
 
 int	init_window(CHIP8 *chip8_data, char *ROM) {
-	WIN *window = chip8_data->window;
-	SDL_Window *win = NULL;
-
-	window->height = DEF_HEIGHT;
-	window->width = DEF_WIDTH;
-	
+	chip8_data->window->height = DEF_HEIGHT;
+	chip8_data->window->width = DEF_WIDTH;
 	if (!SDL_Init(SDL_INIT_EVENTS))
 		return 0;
-
-	win = SDL_CreateWindow(ROM, window->width, window->height, SDL_WINDOW_RESIZABLE);
-	
-	if (!win || !(window->renderer = SDL_CreateRenderer(win, NULL))) {
-		if (win) SDL_DestroyWindow(win);
+	chip8_data->window->win = SDL_CreateWindow(ROM, chip8_data->window->width, chip8_data->window->height, SDL_WINDOW_RESIZABLE);
+	if (!chip8_data->window->win || !(chip8_data->window->renderer = SDL_CreateRenderer(chip8_data->window->win, NULL))) {
+		if (chip8_data->window->win) SDL_DestroyWindow(chip8_data->window->win);
+		SDL_Quit();
 		return 0;
 	}
-
-	SDL_SetWindowMinimumSize(win, MIN_WIDTH, MIN_HEIGHT);
-
-	window->win = win;
-
-	draw_background(window, 0xFFFFFFFF);
-	draw_background(win, 0xFFFFFFFF);
+	SDL_SetWindowMinimumSize(chip8_data->window->win, MIN_WIDTH, MIN_HEIGHT);
+	draw_background(chip8_data->window, 0xFFFFFFFF);
 	return 1;
 }
