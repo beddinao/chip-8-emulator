@@ -1,4 +1,4 @@
-#include "chip8.h"
+#include <chip8.h> 
 
 //// // /		INSTRUCTIONS
 
@@ -534,7 +534,7 @@ int	main(int c, char **v)
 	/// / //		INIT DISPLAY
 	chip8_data->window = malloc(sizeof(WIN));
 	if (!chip8_data->window || !init_window(chip8_data, v[1])) {
-		printf("failed to initialize MLX window\n");
+		printf("failed to initialize SDL window\n");
 		free(chip8_data);
 		return 1;
 	}
@@ -547,6 +547,5 @@ int	main(int c, char **v)
 	pthread_mutex_init(&chip8_data->state_mutex, NULL);
 	pthread_mutex_init(&chip8_data->keys_mutex, NULL);
 	pthread_create(&chip8_data->worker, NULL, instruction_cycle, chip8_data);
-	mlx_loop_hook(chip8_data->window->mlx_ptr, render_display, chip8_data);
-	mlx_loop(chip8_data->window->mlx_ptr);
+	render_display(chip8_data);
 }

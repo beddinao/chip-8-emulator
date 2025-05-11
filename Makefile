@@ -2,24 +2,24 @@ CC = cc
 SRC = $(wildcard src/*.c)
 HR = $(wildcard include/*.h)
 OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
-CFLAGS = -Iinclude -I./MLX42/include/MLX42 -Werror -Wextra -Wall
-#CFLAGS = -fsanitize=address
-LDFLAGS = ./MLX42/build/libmlx42.a
-UNAME = $(shell uname)
+CFLAGS = -Iinclude 
+LDFLAGS = -Llib -Wl,-rpath,lib -Wl,-lSDL3
+SDL_PATH = ./assets/SDL3
 NAME = chip8
 
-ifeq ($(UNAME), Linux)
-	LDFLAGS += -lglfw -ldl -pthread -lm
-endif
-ifeq ($(UNAME), Darwin)
-	LDFLAGS += -lglfw -L $(shell brew --prefix glfw)/lib -framework Cocoa -framework IOKit
-endif
+all: dirs_set sdl $(NAME)
 
-all: mlx $(NAME)
+sdl:
+	cmake -B $(SDL_PATH)/build $(SDL_PATH) -DCMAKE_CXX_COMPILER="g++"
+	cmake --build $(SDL_PATH)/build
+	cp -r $(SDL_PATH)/include/SDL3 include
+	cp -r $(SDL_PATH)/build/libSDL3* lib
 
-mlx:
-	@cmake -B ./MLX42/build ./MLX42 -D CMAKE_CXX_COMPILER="g++"
-	@cmake --build ./MLX42/build -j16
+dirs_set:
+	mkdir -p lib
+
+dirs_rem:
+	rm -rf lib
 
 $(NAME): $(OBJ)
 	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS)
@@ -30,9 +30,10 @@ build/%.o: src/%.c $(HR)
 
 clean:
 	rm -rf build
-	rm -rf MLX42/build
 
-fclean: clean
+fclean: dirs_rem clean
+	rm -rf include/SDL3
+	rm -rf $(SDL_PATH)/build
 	rm -rf $(NAME)
 
 re: fclean all
