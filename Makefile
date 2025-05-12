@@ -22,7 +22,7 @@ dirs_rem:
 	rm -rf lib
 
 $(NAME): $(OBJ)
-	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS) -fsanitize=address -g
+	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS) -fsanitize=address -g -O3 -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORTED_FUNCTIONS=_exec_clr,_exec_ldp,_main,_render_display
 
 build/%.o: src/%.c $(HR)
 	@mkdir -p $(dir $@)

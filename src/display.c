@@ -20,12 +20,13 @@ unsigned	__calc_new_range(unsigned old_value,
 	return (((old_value - old_min) * (new_max - new_min)) / (old_max - old_min)) + new_min;
 }
 
-void	render_display(CHIP8 *chip8_data) {
+void	render_display(void *p) {
+	CHIP8* chip8_data = (CHIP8*)p;
 	unsigned scale_x, scale_y;
 	uint32_t color;
 	SDL_Event event;
 
-	while (1) {
+	//while (1) {
 		if (SDL_PollEvent(&event)) {
 			switch (event.type) {
 				case SDL_EVENT_QUIT: close_hook(chip8_data); break;
@@ -72,7 +73,7 @@ void	render_display(CHIP8 *chip8_data) {
 	
 		SDL_RenderPresent(chip8_data->window->renderer);	
 
-	}
+	//}
 }
 
 

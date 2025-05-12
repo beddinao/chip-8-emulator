@@ -508,12 +508,16 @@ void	load_fonts(CHIP8 *chip8_data) {
 	memcpy(chip8_data->RAM + FONTS_START, fonts, sizeof(fonts));
 }
 
+void	exec_clr() {
+	printf("exec_clr exec\n");
+}
+
+void	exec_ldp(uint8_t *ubs) {
+	printf("exec_ldp exec\n");
+}
+
 int	main(int c, char **v)
 {
-	if (c != 2) {
-		printf("usage: ./chip8 [program to execute]\n");
-		return 1;
-	}
 	srand(time(0));
 
 	CHIP8	*chip8_data = malloc(sizeof(CHIP8));
@@ -522,7 +526,7 @@ int	main(int c, char **v)
 	memset(chip8_data, 0, sizeof(CHIP8));
 
 	/// / //		LOADING ROM
-	if (!load_to_memory(chip8_data, v[1])) {
+	if (!load_to_memory(chip8_data, "./programs/roms/IBM_logo.ch8")) {
 		printf("failed to load program to memory\n");
 		free(chip8_data);
 		return 1;
@@ -533,7 +537,7 @@ int	main(int c, char **v)
 
 	/// / //		INIT DISPLAY
 	chip8_data->window = malloc(sizeof(WIN));
-	if (!chip8_data->window || !init_window(chip8_data, v[1])) {
+	if (!chip8_data->window || !init_window(chip8_data, "chip-8-emu")) {
 		printf("failed to initialize SDL window\n");
 		if (chip8_data->window) free(chip8_data->window);
 		free(chip8_data);
@@ -548,5 +552,6 @@ int	main(int c, char **v)
 	pthread_mutex_init(&chip8_data->state_mutex, NULL);
 	pthread_mutex_init(&chip8_data->keys_mutex, NULL);
 	pthread_create(&chip8_data->worker, NULL, instruction_cycle, chip8_data);
-	render_display(chip8_data);
+
+	emscripten_set_main_loop_arg(render_display, chip8_data, 0, 1);
 }

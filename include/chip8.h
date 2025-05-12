@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <math.h>
 #include <SDL3/SDL.h> 
+#include <emscripten/emscripten.h>
 
 #define	MEMORY_SIZE	0x1000 // 4096
 #define	MEMORY_START	0x200  // 512
@@ -72,7 +73,7 @@ typedef	struct chip8 {
 
 /* display.c */
 int	init_window(CHIP8*, char*);
-void	render_display(CHIP8*);
+void	render_display(void*);
 
 /* hooks.c */
 void	key_hook(CHIP8*, SDL_Event*, int);
