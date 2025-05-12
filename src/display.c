@@ -92,5 +92,6 @@ int	init_window(CHIP8 *chip8_data, char *ROM) {
 	//draw_background(chip8_data->window, 0xFFFFFFFF);
 	draw_background(chip8_data->window, 0x0000FFFF);
 	SDL_RenderPresent(chip8_data->window->renderer);
+	sleep(5);
 	return 1;
 }
