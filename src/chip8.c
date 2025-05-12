@@ -205,15 +205,12 @@ void	_Dxyn (CHIP8* chip8_data) {
 				if (x + col >= DIS_W || y + row >= DIS_H)
 					continue;
 				sprite_pixel = (sprite_byte >> (7 - col)) & 0x1;
-				//pthread_mutex_lock(&chip8_data->display_mutex);
 				display_pixel = &chip8_data->display[(y + row) * DIS_W + (x + col)];
 				if (*display_pixel == 1 && sprite_pixel == 1)
 					chip8_data->registers[0xF] = 1;
 				*display_pixel ^= sprite_pixel;
-				//pthread_mutex_unlock(&chip8_data->display_mutex);
 			}
 		}
-		//render_display(chip8_data);
 	}
 }
 
@@ -221,22 +218,18 @@ void	_Dxyn (CHIP8* chip8_data) {
 void	_Ex9E (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	uint8_t	key = chip8_data->registers[ reg_x ];
-	//pthread_mutex_lock(&chip8_data->keys_mutex);
 	if (chip8_data->keys[ key ]) {
 		chip8_data->keys[ key ] = 0;
 		chip8_data->PC += 2;
 	}
-	//pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 //	EXA1:SKNP Vx
 void	_ExA1 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	uint8_t	key = chip8_data->registers[reg_x];
-	//pthread_mutex_lock(&chip8_data->keys_mutex);
 	if (chip8_data->keys[ key ]) 
 		chip8_data->PC += 2;
-	//pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 //	FX07: LD Vx, DT
@@ -327,110 +320,84 @@ void	_Fx65 (CHIP8* chip8_data) {
 
 // /// /	CYCLE
 
-void	*instruction_cycle(void *p) {
+void	instruction_cycle(void *p) {
 	uint16_t	instruction, valid_instruction;
 	CHIP8 *chip8_data = (CHIP8*)p;
 
 
-	/* ----? */
+	/* ----?damn */
 	render_display(chip8_data);
 
-	chip8_data->PC = MEMORY_START;
-	//struct timeval f_time, s_time;
-	//memset(&f_time, 0, sizeof(f_time));
-	//memset(&s_time, 0, sizeof(s_time));
 
-	//gettimeofday(&f_time, NULL);
-	while (1) {
-		pthread_mutex_lock(&chip8_data->state_mutex);
-		if (chip8_data->emu_state) {
-			pthread_mutex_unlock(&chip8_data->state_mutex);
-			return 0;
+	chip8_data->DT -= (chip8_data->DT ? 1 : 0);
+	chip8_data->ST -= (chip8_data->ST ? 1 : 0);
+
+	valid_instruction = 1;
+	for (unsigned i = 0; i <= 0xF; i++)
+		if (chip8_data->keys[i]) {
+			if (chip8_data->halt) {
+				chip8_data->registers[chip8_data->key_register] = i;
+				chip8_data->keys[i] = 0;
+				chip8_data->halt = 0;
+				chip8_data->PC += 2;
+				valid_instruction = 0;
+				break;
+			}
+			else	chip8_data->keys[i]--;
 		}
-		pthread_mutex_unlock(&chip8_data->state_mutex);
 
-		/*gettimeofday(&s_time, NULL);
-		  if (abs((int)s_time.tv_usec - (int)f_time.tv_usec) > TIME_DIFF)
-		  gettimeofday(&f_time, NULL);
-		  else	return;	*/
+	if (chip8_data->halt || !valid_instruction)
+		return;	
 
-		chip8_data->DT -= (chip8_data->DT ? 1 : 0);
-		chip8_data->ST -= (chip8_data->ST ? 1 : 0);
+	chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
+	chip8_data->PC += 2;
 
-		valid_instruction = 1;
-		pthread_mutex_lock(&chip8_data->keys_mutex);
-		for (unsigned i = 0; i <= 0xF; i++)
-			if (chip8_data->keys[i]) {
-				if (chip8_data->halt) {
-					chip8_data->registers[chip8_data->key_register] = i;
-					chip8_data->keys[i] = 0;
-					chip8_data->halt = 0;
-					chip8_data->PC += 2;
-					valid_instruction = 0;
-					break;
-				}
-				else	chip8_data->keys[i]--;
-			}
-		pthread_mutex_unlock(&chip8_data->keys_mutex);
+	instruction = chip8_data->opcode & 0xF000;
 
-		if (chip8_data->halt || !valid_instruction)
-			continue;	
-
-		chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
-		chip8_data->PC += 2;
-
-		instruction = chip8_data->opcode & 0xF000;
-
-		if (instruction == 0x0000)
-			switch (chip8_data->opcode & 0x00FF) {
-				case 0x00E0: _00E0(chip8_data); break;
-				case 0x00EE: _00EE(chip8_data); break;
-				default: valid_instruction = 0;
-			}
-		else if (instruction >= 0x1000 && instruction <= 0x7000)
-			chip8_data->_0_7_set[(instruction >> 0xC) - 0x1](chip8_data);
-		else if (instruction == 0x8000) {
-			uint8_t n = chip8_data->opcode & 0x000F;
-			if (n <= 0x7 || n == 0xE)
-				chip8_data->_8s_set[n](chip8_data);
-			else	valid_instruction = 0;
+	if (instruction == 0x0000)
+		switch (chip8_data->opcode & 0x00FF) {
+			case 0x00E0: _00E0(chip8_data); break;
+			case 0x00EE: _00EE(chip8_data); break;
+			default: valid_instruction = 0;
 		}
-		else if (instruction >= 0x9000 && instruction <= 0xD000)
-			chip8_data->_9_D_set[(instruction >> 0xC) - 0x9](chip8_data);
-		else if (instruction == 0xE000)
-			switch (chip8_data->opcode & 0x00FF) {
-				case 0x009E: chip8_data->_Es_set[0](chip8_data); break;
-				case 0x00A1: chip8_data->_Es_set[1](chip8_data); break;
-				default: valid_instruction = 0;
-			}
-		else if (instruction == 0xF000)
-			switch (chip8_data->opcode & 0x00FF) {
-				case 0x0007: chip8_data->_Fs_set[0](chip8_data); break;
-				case 0x000A: chip8_data->_Fs_set[1](chip8_data); break;
-				case 0x0015: chip8_data->_Fs_set[2](chip8_data); break;
-				case 0x0018: chip8_data->_Fs_set[3](chip8_data); break;
-				case 0x001E: chip8_data->_Fs_set[4](chip8_data); break;
-				case 0x0029: chip8_data->_Fs_set[5](chip8_data); break;
-				case 0x0033: chip8_data->_Fs_set[6](chip8_data); break;
-				case 0x0055: chip8_data->_Fs_set[7](chip8_data); break;
-				case 0x0065: chip8_data->_Fs_set[8](chip8_data); break;
-				default: valid_instruction = 0;
-			}
+	else if (instruction >= 0x1000 && instruction <= 0x7000)
+		chip8_data->_0_7_set[(instruction >> 0xC) - 0x1](chip8_data);
+	else if (instruction == 0x8000) {
+		uint8_t n = chip8_data->opcode & 0x000F;
+		if (n <= 0x7 || n == 0xE)
+			chip8_data->_8s_set[n](chip8_data);
 		else	valid_instruction = 0;
-
-		if (!valid_instruction
-				|| chip8_data->PC > MEMORY_SIZE
-				|| chip8_data->PC > chip8_data->memory_occupied + MEMORY_START
-				|| chip8_data->PC < MEMORY_START) {
-			printf("SCREW THIS SHIT\n");
-			//close_hook(chip8_data);
-			pthread_mutex_lock(&chip8_data->state_mutex);
-			chip8_data->emu_state = 1;
-			pthread_mutex_unlock(&chip8_data->state_mutex);
-			break;
-		}
 	}
-	return 0;
+	else if (instruction >= 0x9000 && instruction <= 0xD000)
+		chip8_data->_9_D_set[(instruction >> 0xC) - 0x9](chip8_data);
+	else if (instruction == 0xE000)
+		switch (chip8_data->opcode & 0x00FF) {
+			case 0x009E: chip8_data->_Es_set[0](chip8_data); break;
+			case 0x00A1: chip8_data->_Es_set[1](chip8_data); break;
+			default: valid_instruction = 0;
+		}
+	else if (instruction == 0xF000)
+		switch (chip8_data->opcode & 0x00FF) {
+			case 0x0007: chip8_data->_Fs_set[0](chip8_data); break;
+			case 0x000A: chip8_data->_Fs_set[1](chip8_data); break;
+			case 0x0015: chip8_data->_Fs_set[2](chip8_data); break;
+			case 0x0018: chip8_data->_Fs_set[3](chip8_data); break;
+			case 0x001E: chip8_data->_Fs_set[4](chip8_data); break;
+			case 0x0029: chip8_data->_Fs_set[5](chip8_data); break;
+			case 0x0033: chip8_data->_Fs_set[6](chip8_data); break;
+			case 0x0055: chip8_data->_Fs_set[7](chip8_data); break;
+			case 0x0065: chip8_data->_Fs_set[8](chip8_data); break;
+			default: valid_instruction = 0;
+		}
+	else	valid_instruction = 0;
+
+	if (!valid_instruction
+			|| chip8_data->PC > MEMORY_SIZE
+			|| chip8_data->PC > chip8_data->memory_occupied + MEMORY_START
+			|| chip8_data->PC < MEMORY_START) {
+		printf("SCREW THIS SHIT\n");
+		close_hook(chip8_data);
+	}
 }
 
 void	load_instructions(CHIP8* chip8_data) {
@@ -470,31 +437,6 @@ void	load_instructions(CHIP8* chip8_data) {
 
 CHIP8* chip8_data = NULL;
 
-int	load_to_memory(CHIP8* chip8_data, char *filename) {
-	unsigned char buffer[MAX_PROGRAM_SIZE];
-	unsigned chars_read;
-	FILE *file = fopen(filename, "rb");
-	if (!file) 
-		return 0;
-
-	memset(buffer, 0, sizeof(buffer));
-	while ((chars_read = fread(buffer, 1, sizeof(buffer), file)) != 0) {
-		if (chars_read + chip8_data->memory_occupied > MAX_PROGRAM_SIZE) {
-			fclose(file);
-			return 0;
-		}
-		memcpy(chip8_data->RAM + (MEMORY_START + chip8_data->memory_occupied), buffer, chars_read);
-		chip8_data->memory_occupied += chars_read;
-		memset(buffer, 0, sizeof(buffer));
-	}
-	fclose(file);
-
-	if (!chip8_data->memory_occupied) 
-		return 0;
-
-	return 1;
-}
-
 void	load_fonts(CHIP8 *chip8_data) {
 	uint8_t fonts[FONTS_SIZE] = {
 		0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -518,12 +460,35 @@ void	load_fonts(CHIP8 *chip8_data) {
 }
 
 void	exec_clr() {
-	memset(chip8_data->RAM + MEMORY_START, 0, chip8_data->memory_occupied);
+	printf("clearing occupied memory\n");
+	if (chip8_data->memory_occupied)
+		memset(chip8_data->RAM + MEMORY_START, 0, chip8_data->memory_occupied);
+
+	unsigned char programs_Chip8_Picture_ch8[] = {
+		0x00, 0xe0, 0xa2, 0x48, 0x60, 0x00, 0x61, 0x1e, 0x62, 0x00, 0xd2, 0x02,
+		0xd2, 0x12, 0x72, 0x08, 0x32, 0x40, 0x12, 0x0a, 0x60, 0x00, 0x61, 0x3e,
+		0x62, 0x02, 0xa2, 0x4a, 0xd0, 0x2e, 0xd1, 0x2e, 0x72, 0x0e, 0xd0, 0x2e,
+		0xd1, 0x2e, 0xa2, 0x58, 0x60, 0x0b, 0x61, 0x08, 0xd0, 0x1f, 0x70, 0x0a,
+		0xa2, 0x67, 0xd0, 0x1f, 0x70, 0x0a, 0xa2, 0x76, 0xd0, 0x1f, 0x70, 0x03,
+		0xa2, 0x85, 0xd0, 0x1f, 0x70, 0x0a, 0xa2, 0x94, 0xd0, 0x1f, 0x12, 0x46,
+		0xff, 0xff, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0,
+		0xc0, 0xc0, 0xc0, 0xc0, 0xff, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+		0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0xff, 0x81, 0x81, 0x81, 0x81, 0x81,
+		0x81, 0x81, 0xff, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x80, 0x80,
+		0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+		0x80, 0xff, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0xff, 0x80, 0x80, 0x80,
+		0x80, 0x80, 0x80, 0x80, 0xff, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0xff,
+		0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0xff, 0xff
+	};
+	unsigned int programs_Chip8_Picture_ch8_len = 164;	
+
+	memcpy(chip8_data->RAM + MEMORY_START, programs_Chip8_Picture_ch8, programs_Chip8_Picture_ch8_len);
+	chip8_data->memory_occupied = programs_Chip8_Picture_ch8_len;
 	chip8_data->PC = MEMORY_START;
 }
 
 void	exec_ldp(uint8_t *program, unsigned size) {
-	printf("exec_ldp exec\n");
+	printf("loading program: %s\n", program);
 	if (!size || size > MAX_PROGRAM_SIZE)
 		printf("cant load program to memory\n");
 
@@ -542,24 +507,8 @@ int	main(int c, char **v)
 		return 1;
 	memset(chip8_data, 0, sizeof(CHIP8));
 
-	unsigned char chip_8_emulator_programs_IBM_logo_ch8[] = {
-		0x00, 0xe0, 0xa2, 0x2a, 0x60, 0x0c, 0x61, 0x08, 0xd0, 0x1f, 0x70, 0x09,
-		0xa2, 0x39, 0xd0, 0x1f, 0xa2, 0x48, 0x70, 0x08, 0xd0, 0x1f, 0x70, 0x04,
-		0xa2, 0x57, 0xd0, 0x1f, 0x70, 0x08, 0xa2, 0x66, 0xd0, 0x1f, 0x70, 0x08,
-		0xa2, 0x75, 0xd0, 0x1f, 0x12, 0x28, 0xff, 0x00, 0xff, 0x00, 0x3c, 0x00,
-		0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0xff, 0x00, 0xff, 0xff, 0x00, 0xff,
-		0x00, 0x38, 0x00, 0x3f, 0x00, 0x3f, 0x00, 0x38, 0x00, 0xff, 0x00, 0xff,
-		0x80, 0x00, 0xe0, 0x00, 0xe0, 0x00, 0x80, 0x00, 0x80, 0x00, 0xe0, 0x00,
-		0xe0, 0x00, 0x80, 0xf8, 0x00, 0xfc, 0x00, 0x3e, 0x00, 0x3f, 0x00, 0x3b,
-		0x00, 0x39, 0x00, 0xf8, 0x00, 0xf8, 0x03, 0x00, 0x07, 0x00, 0x0f, 0x00,
-		0xbf, 0x00, 0xfb, 0x00, 0xf3, 0x00, 0xe3, 0x00, 0x43, 0xe0, 0x00, 0xe0,
-		0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0xe0, 0x00, 0xe0
-	};
-	unsigned int chip_8_emulator_programs_IBM_logo_ch8_len = 132;
-
-	memcpy(chip8_data->RAM + MEMORY_START, chip_8_emulator_programs_IBM_logo_ch8, chip_8_emulator_programs_IBM_logo_ch8_len);
-	chip8_data->memory_occupied = chip_8_emulator_programs_IBM_logo_ch8_len;
-	chip8_data->PC = MEMORY_START;
+	/* ....? */
+	exec_clr();
 
 	// /// /		LOADING FONTS
 	load_fonts(chip8_data);
@@ -577,11 +526,5 @@ int	main(int c, char **v)
 	load_instructions(chip8_data);
 
 	/// / //		CYCLE
-	pthread_mutex_init(&chip8_data->display_mutex, NULL);
-	pthread_mutex_init(&chip8_data->state_mutex, NULL);
-	pthread_mutex_init(&chip8_data->keys_mutex, NULL);
-	pthread_create(&chip8_data->worker, NULL, instruction_cycle, chip8_data);
-
-	//emscripten_set_main_loop_arg(render_display, chip8_data, 0, 1);
-	emscripten_set_main_loop_arg(render_display, chip8_data, 0, 1);
+	emscripten_set_main_loop_arg(instruction_cycle, chip8_data, 0, 1);
 }

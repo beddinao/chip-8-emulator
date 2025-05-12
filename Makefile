@@ -20,11 +20,11 @@ dirs_rem:
 	rm -rf lib
 
 $(NAME): $(OBJ)
-	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS) -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORTED_FUNCTIONS=_exec_clr,_exec_ldp,_main,_instruction_cycle,_render_display
+	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS) -O3 -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORTED_FUNCTIONS=_exec_clr,_exec_ldp,_main,_instruction_cycle
 
 build/%.o: src/%.c $(HR)
 	@mkdir -p $(dir $@)
-	$(CC) -c $< -o $@ $(CFLAGS)
+	$(CC) -O3 -c $< -o $@ $(CFLAGS)
 
 clean:
 	rm -rf build
@@ -33,6 +33,7 @@ fclean: dirs_rem clean
 	rm -rf include/SDL3
 	rm -rf $(SDL_PATH)/build
 	rm -rf $(NAME)
+	rm -rf chip8.wasm chip8.js
 
 re: fclean all
 

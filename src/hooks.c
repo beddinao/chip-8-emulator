@@ -6,15 +6,6 @@ void	close_hook(void *p) {
 	CHIP8 *chip8_data = (CHIP8*)p;
 	WIN* window = chip8_data->window;
 
-	pthread_mutex_lock(&chip8_data->state_mutex);
-	chip8_data->emu_state = 1;
-	pthread_mutex_unlock(&chip8_data->state_mutex);
-	pthread_join(chip8_data->worker, NULL);
-
-	pthread_mutex_destroy(&chip8_data->display_mutex);
-	pthread_mutex_destroy(&chip8_data->state_mutex);
-	pthread_mutex_destroy(&chip8_data->keys_mutex);
-
 	SDL_DestroyRenderer(window->renderer);
 	SDL_DestroyWindow(window->win);
 	SDL_Quit();
@@ -28,9 +19,7 @@ void	close_hook(void *p) {
 void	key_hook(CHIP8* chip8_data, SDL_Event *event, int press) {
 	SDL_Keycode key = event->key.key;
 
-	pthread_mutex_lock(&chip8_data->keys_mutex);
 	if (key == SDLK_ESCAPE) {
-		pthread_mutex_unlock(&chip8_data->keys_mutex);
 		close_hook(chip8_data);
 	}
 	else if (key >= SDLK_0 && key <= SDLK_9)
@@ -63,30 +52,20 @@ void	key_hook(CHIP8* chip8_data, SDL_Event *event, int press) {
 		}
 		chip8_data->keys[ i ] = KEY_PRESS_CYCLES;
 	}*/
-	pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
-/*
-void	resize_hook(int width, int height, void *p) {
+
+void	resize_hook(void *p) {
 	CHIP8 *chip8_data = (CHIP8*)p;
-	unsigned	valid = 0;
+	int new_w, new_h;
 
-	if (height > MIN_HEIGHT) {
-		chip8_data->window->height = height;
-		valid = 1;
-	}
-	if (width > MIN_WIDTH) {
-		chip8_data->window->width = width;
-		valid = 1;
-	}
+	if (!SDL_GetWindowSize(chip8_data->window->win, &new_w, &new_h))
+		return;
 
-	if (valid) {
-		if (!mlx_resize_image(chip8_data->window->mlx_img,
-				chip8_data->window->width,
-				chip8_data->window->height))
-			close_hook(p);
-		render_display(chip8_data);
-	}
+	chip8_data->window->height = new_h;
+	chip8_data->window->width = new_w;
+
+	render_display(chip8_data);
 }
-*/
+
 

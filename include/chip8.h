@@ -8,7 +8,6 @@
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <sys/time.h>
 #include <math.h>
 #include <SDL3/SDL.h> 
@@ -64,15 +63,10 @@ typedef	struct chip8 {
 	uint16_t		opcode;
 	uint16_t		memory_occupied;
 	//////////////
-	uint8_t		emu_state;
-	pthread_t		worker;
-	pthread_mutex_t	display_mutex;
-	pthread_mutex_t	keys_mutex;
-	pthread_mutex_t	state_mutex;
 }	CHIP8;
 
 /* chip8.c */
-void	*instruction_cycle(void*);
+void	instruction_cycle(void*);
 
 /* display.c */
 int	init_window(CHIP8*, char*);
@@ -80,6 +74,7 @@ void	render_display(void*);
 
 /* hooks.c */
 void	key_hook(CHIP8*, SDL_Event*, int);
+void	resize_hook(void*);
 void	close_hook(void*);
 
 #endif

@@ -32,25 +32,18 @@ void	render_display(void *p) {
 			case SDL_EVENT_QUIT: close_hook(chip8_data); break;
 			case SDL_EVENT_KEY_DOWN: key_hook(chip8_data, &event, 1); break;
 			case SDL_EVENT_KEY_UP: key_hook(chip8_data, &event, 0); break;
+			case SDL_EVENT_WINDOW_RESIZED: resize_hook(chip8_data); break;
 			default: break;
 		}
 	}
 
-	pthread_mutex_lock(&chip8_data->state_mutex);
-	if (chip8_data->emu_state) {
-		pthread_mutex_unlock(&chip8_data->state_mutex);
-		close_hook(chip8_data);
-	}
-	pthread_mutex_unlock(&chip8_data->state_mutex);
 
 	scale_x = chip8_data->window->width / DIS_W;
 	scale_y = chip8_data->window->height / DIS_H;
 
 	for (unsigned y = 0; y < DIS_H; y++)
 		for (unsigned x = 0; x < DIS_W; x++) {
-			//pthread_mutex_lock(&chip8_data->display_mutex);
 			color = chip8_data->display[y * DIS_W + x] ? 0xFFFFFFFF : 0x000000FF;
-			//pthread_mutex_unlock(&chip8_data->display_mutex);
 
 			SDL_SetRenderDrawColor(chip8_data->window->renderer,
 					(color >> 24) & 0xFF,
