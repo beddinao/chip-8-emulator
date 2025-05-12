@@ -205,12 +205,12 @@ void	_Dxyn (CHIP8* chip8_data) {
 				if (x + col >= DIS_W || y + row >= DIS_H)
 					continue;
 				sprite_pixel = (sprite_byte >> (7 - col)) & 0x1;
-				pthread_mutex_lock(&chip8_data->display_mutex);
+				//pthread_mutex_lock(&chip8_data->display_mutex);
 				display_pixel = &chip8_data->display[(y + row) * DIS_W + (x + col)];
 				if (*display_pixel == 1 && sprite_pixel == 1)
 					chip8_data->registers[0xF] = 1;
 				*display_pixel ^= sprite_pixel;
-				pthread_mutex_unlock(&chip8_data->display_mutex);
+				//pthread_mutex_unlock(&chip8_data->display_mutex);
 			}
 		}
 		//render_display(chip8_data);
@@ -221,22 +221,22 @@ void	_Dxyn (CHIP8* chip8_data) {
 void	_Ex9E (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	uint8_t	key = chip8_data->registers[ reg_x ];
-	pthread_mutex_lock(&chip8_data->keys_mutex);
+	//pthread_mutex_lock(&chip8_data->keys_mutex);
 	if (chip8_data->keys[ key ]) {
 		chip8_data->keys[ key ] = 0;
 		chip8_data->PC += 2;
 	}
-	pthread_mutex_unlock(&chip8_data->keys_mutex);
+	//pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 //	EXA1:SKNP Vx
 void	_ExA1 (CHIP8* chip8_data) {
 	uint8_t	reg_x = (chip8_data->opcode & 0x0F00) >> 8;
 	uint8_t	key = chip8_data->registers[reg_x];
-	pthread_mutex_lock(&chip8_data->keys_mutex);
+	//pthread_mutex_lock(&chip8_data->keys_mutex);
 	if (chip8_data->keys[ key ]) 
 		chip8_data->PC += 2;
-	pthread_mutex_unlock(&chip8_data->keys_mutex);
+	//pthread_mutex_unlock(&chip8_data->keys_mutex);
 }
 
 //	FX07: LD Vx, DT
@@ -330,12 +330,17 @@ void	_Fx65 (CHIP8* chip8_data) {
 void	*instruction_cycle(void *p) {
 	uint16_t	instruction, valid_instruction;
 	CHIP8 *chip8_data = (CHIP8*)p;
-	chip8_data->PC = MEMORY_START;
-	struct timeval f_time, s_time;
-	memset(&f_time, 0, sizeof(f_time));
-	memset(&s_time, 0, sizeof(s_time));
 
-	gettimeofday(&f_time, NULL);
+
+	/* ----? */
+	render_display(chip8_data);
+
+	chip8_data->PC = MEMORY_START;
+	//struct timeval f_time, s_time;
+	//memset(&f_time, 0, sizeof(f_time));
+	//memset(&s_time, 0, sizeof(s_time));
+
+	//gettimeofday(&f_time, NULL);
 	while (1) {
 		pthread_mutex_lock(&chip8_data->state_mutex);
 		if (chip8_data->emu_state) {
@@ -344,10 +349,10 @@ void	*instruction_cycle(void *p) {
 		}
 		pthread_mutex_unlock(&chip8_data->state_mutex);
 
-		gettimeofday(&s_time, NULL);
-		if (abs((int)s_time.tv_usec - (int)f_time.tv_usec) > TIME_DIFF)
-			gettimeofday(&f_time, NULL);
-		else	continue;
+		/*gettimeofday(&s_time, NULL);
+		  if (abs((int)s_time.tv_usec - (int)f_time.tv_usec) > TIME_DIFF)
+		  gettimeofday(&f_time, NULL);
+		  else	return;	*/
 
 		chip8_data->DT -= (chip8_data->DT ? 1 : 0);
 		chip8_data->ST -= (chip8_data->ST ? 1 : 0);
@@ -369,7 +374,7 @@ void	*instruction_cycle(void *p) {
 		pthread_mutex_unlock(&chip8_data->keys_mutex);
 
 		if (chip8_data->halt || !valid_instruction)
-			continue;
+			continue;	
 
 		chip8_data->opcode = (chip8_data->RAM[ chip8_data->PC ] << 8 | chip8_data->RAM[ chip8_data->PC + 1 ]);
 		chip8_data->PC += 2;
@@ -417,6 +422,8 @@ void	*instruction_cycle(void *p) {
 				|| chip8_data->PC > MEMORY_SIZE
 				|| chip8_data->PC > chip8_data->memory_occupied + MEMORY_START
 				|| chip8_data->PC < MEMORY_START) {
+			printf("SCREW THIS SHIT\n");
+			//close_hook(chip8_data);
 			pthread_mutex_lock(&chip8_data->state_mutex);
 			chip8_data->emu_state = 1;
 			pthread_mutex_unlock(&chip8_data->state_mutex);
@@ -511,7 +518,8 @@ void	load_fonts(CHIP8 *chip8_data) {
 }
 
 void	exec_clr() {
-	printf("exec_clr exec\n");
+	memset(chip8_data->RAM + MEMORY_START, 0, chip8_data->memory_occupied);
+	chip8_data->PC = MEMORY_START;
 }
 
 void	exec_ldp(uint8_t *program, unsigned size) {
@@ -534,13 +542,6 @@ int	main(int c, char **v)
 		return 1;
 	memset(chip8_data, 0, sizeof(CHIP8));
 
-	/// / //		LOADING ROM
-	/*if (!load_to_memory(chip8_data, "./programs/roms/IBM_logo.ch8")) {
-	  printf("failed to load program to memory\n");
-	  free(chip8_data);
-	  return 1;
-	  }*/
-
 	unsigned char chip_8_emulator_programs_IBM_logo_ch8[] = {
 		0x00, 0xe0, 0xa2, 0x2a, 0x60, 0x0c, 0x61, 0x08, 0xd0, 0x1f, 0x70, 0x09,
 		0xa2, 0x39, 0xd0, 0x1f, 0xa2, 0x48, 0x70, 0x08, 0xd0, 0x1f, 0x70, 0x04,
@@ -558,6 +559,7 @@ int	main(int c, char **v)
 
 	memcpy(chip8_data->RAM + MEMORY_START, chip_8_emulator_programs_IBM_logo_ch8, chip_8_emulator_programs_IBM_logo_ch8_len);
 	chip8_data->memory_occupied = chip_8_emulator_programs_IBM_logo_ch8_len;
+	chip8_data->PC = MEMORY_START;
 
 	// /// /		LOADING FONTS
 	load_fonts(chip8_data);
@@ -580,5 +582,6 @@ int	main(int c, char **v)
 	pthread_mutex_init(&chip8_data->keys_mutex, NULL);
 	pthread_create(&chip8_data->worker, NULL, instruction_cycle, chip8_data);
 
+	//emscripten_set_main_loop_arg(render_display, chip8_data, 0, 1);
 	emscripten_set_main_loop_arg(render_display, chip8_data, 0, 1);
 }

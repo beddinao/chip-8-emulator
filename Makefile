@@ -10,8 +10,6 @@ NAME = chip8.html
 all: dirs_set sdl $(NAME)
 
 sdl:
-	#@cmake -B $(SDL_PATH)/build $(SDL_PATH) -DCMAKE_CXX_COMPILER="g++"
-	#@cd $(SDL_PATH)/build && make -j10
 	@cp -r $(SDL_PATH)/include/SDL3 include
 	@cp -r $(SDL_PATH)/build/libSDL3* lib
 
@@ -22,7 +20,7 @@ dirs_rem:
 	rm -rf lib
 
 $(NAME): $(OBJ)
-	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS) -fsanitize=address -g -O3 -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORTED_FUNCTIONS=_exec_clr,_exec_ldp,_main,_render_display
+	$(CC) -o $(NAME) $(OBJ) $(LDFLAGS) -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=ccall,cwrap -sEXPORTED_FUNCTIONS=_exec_clr,_exec_ldp,_main,_instruction_cycle,_render_display
 
 build/%.o: src/%.c $(HR)
 	@mkdir -p $(dir $@)
@@ -32,8 +30,8 @@ clean:
 	rm -rf build
 
 fclean: dirs_rem clean
-	#rm -rf include/SDL3
-	#rm -rf $(SDL_PATH)/build
+	rm -rf include/SDL3
+	rm -rf $(SDL_PATH)/build
 	rm -rf $(NAME)
 
 re: fclean all

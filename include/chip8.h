@@ -71,6 +71,9 @@ typedef	struct chip8 {
 	pthread_mutex_t	state_mutex;
 }	CHIP8;
 
+/* chip8.c */
+void	*instruction_cycle(void*);
+
 /* display.c */
 int	init_window(CHIP8*, char*);
 void	render_display(void*);
