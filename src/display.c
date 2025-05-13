@@ -29,7 +29,6 @@ void	render_display(void *p) {
 	//while (1) {
 	if (SDL_PollEvent(&event)) {
 		switch (event.type) {
-			case SDL_EVENT_QUIT: close_hook(chip8_data); break;
 			case SDL_EVENT_KEY_DOWN: key_hook(chip8_data, &event, 1); break;
 			case SDL_EVENT_KEY_UP: key_hook(chip8_data, &event, 0); break;
 			case SDL_EVENT_WINDOW_RESIZED: resize_hook(chip8_data); break;

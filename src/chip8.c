@@ -488,9 +488,16 @@ void	exec_clr() {
 }
 
 void	exec_ldp(uint8_t *program, unsigned size) {
-	printf("loading program: %s\n", program);
 	if (!size || size > MAX_PROGRAM_SIZE)
 		printf("cant load program to memory\n");
+
+	if (chip8_data->memory_occupied) {
+		WIN* window = chip8_data->window;
+		memset(chip8_data, 0, sizeof(CHIP8));
+		load_fonts(chip8_data);
+		load_instructions(chip8_data);
+		chip8_data->window = window;
+	}
 
 	memcpy(chip8_data->RAM + MEMORY_START, program, size);
 	chip8_data->memory_occupied = size;
@@ -524,6 +531,9 @@ int	main(int c, char **v)
 
 	/// /// /		LOADING INSTRUCTIONS
 	load_instructions(chip8_data);
+
+	/// / /		NOTE
+	printf("NOTE: not as much accurate as the original C Project, still testing stuff, more programs will be added\n");
 
 	/// / //		CYCLE
 	emscripten_set_main_loop_arg(instruction_cycle, chip8_data, 0, 1);

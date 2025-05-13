@@ -20,7 +20,8 @@ void	key_hook(CHIP8* chip8_data, SDL_Event *event, int press) {
 	SDL_Keycode key = event->key.key;
 
 	if (key == SDLK_ESCAPE) {
-		close_hook(chip8_data);
+		printf("DON'T ESCAPE DAMIT\n");
+		return;
 	}
 	else if (key >= SDLK_0 && key <= SDLK_9)
 		chip8_data->keys[key - SDLK_0] = KEY_PRESS_CYCLES;
