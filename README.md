@@ -1,7 +1,7 @@
 
 # *`CHIP-8-EMULATOR`*
 
-<a href="https://en.wikipedia.org/wiki/CHIP-8">CHIP-8</a> - <a href="https://github.com/codam-coding-college/MLX42">MLX42</a>
+<a href="https://en.wikipedia.org/wiki/CHIP-8">CHIP-8</a> - <a href="https://www.libsdl.org/">SDL3</a>
 
 ```
 A CHIP-8 emulator, and a good framework for emulating advanced Consols.
